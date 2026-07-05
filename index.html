@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tornado Survival</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0a0d0a;
+        font-family: system-ui, sans-serif;
+      }
+      #app {
+        width: 100%;
+        height: 100%;
+      }
+      #app canvas {
+        display: block;
+      }
+      /* HTML UI overlays (HUD, round banners) render above the canvas. */
+      #ui {
+        position: fixed;
+        inset: 0;
+        pointer-events: none; /* individual UI elements opt back in */
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="ui"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
