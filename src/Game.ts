@@ -119,12 +119,11 @@ export class Game {
       hospital.lightFixtures,
       this.quality,
       this.noise,
-      hospital.fixtureSection,
-      hospital.fixtureAnchor,
-      // A fixture dies exactly when its anchor block is released (its local
-      // ceiling geometry is genuinely destroyed) — never on re-sleep, which
-      // does not release blocks. Per-floor precise, O(1) per fixture.
-      (sec, blk) => this.structures.structures[sec]?.blocks[blk]?.released ?? false,
+      // A fixture dies exactly when its room is gone: no intact block remains
+      // within strandRange of its housing. Robust to which block survives (the
+      // durable concrete deck/columns can outlive the room without stranding a
+      // light — this keys on local enclosure, not on any one anchor block).
+      (pos) => !this.structures.anyIntactBlockNear(pos, GameConfig.interiorLights.strandRange),
     );
     this.damage = new DamageSystem();
     this.player = new PlayerController(this.scene, this.physics, this.windField, this.damage);

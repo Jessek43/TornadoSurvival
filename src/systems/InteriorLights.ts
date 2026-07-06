@@ -32,16 +32,15 @@ export class InteriorLights {
   private readonly pool: THREE.PointLight[] = [];
   private readonly poolFixture: number[] = []; // which fixture each pool light tracks
 
-  /** Section + anchor BLOCK that owns each fixture. The fixture is parented to
-   *  a specific floor-slab block of its section; when THAT block is released
-   *  (genuine local destruction) the fixture dies with it. Finer than
-   *  whole-section ownership — a light on a destroyed floor of a surviving wing
-   *  no longer floats — and re-sleep-safe (sleep/wake never release a block). */
-  private readonly fixtureSection: number[];
-  private readonly fixtureAnchor: number[];
-  /** True once a fixture's anchor block is released — dark + gone forever.
-   *  Latched, since block release is monotonic. */
+  /** True once a fixture has been stranded (nothing solid left around its
+   *  housing) — dark + gone forever. Latched: block release is monotonic, so
+   *  enclosure only ever decreases; a fixture never un-strands. */
   private readonly dead: boolean[];
+  /** Rolling cursor + per-frame budget for the strand probe, so its cost is
+   *  bounded regardless of fixture count (one cheap AABB probe apiece, spread
+   *  over a handful of frames). */
+  private probeCursor = 0;
+  private readonly probeBudget: number;
   private readonly black = new THREE.Color(0x000000);
   /** Zero-scale for dead fixtures: the BOX disappears with its room, not just
    *  its glow — a black fixture floating where a ceiling used to be was the
@@ -59,19 +58,19 @@ export class InteriorLights {
     fixturePositions: [number, number, number][],
     quality: QualitySettings,
     private readonly noise: Noise,
-    fixtureSection: number[],
-    fixtureAnchor: number[],
-    /** "Has this fixture's anchor block been released (destroyed)?" Reads the
-     *  per-block `released` flag, which is monotonic and NEVER set by
-     *  sleep()/wake() — so a re-slept dormant section keeps its lights, while a
-     *  destroyed floor drops exactly its own fixtures. */
-    private readonly isAnchorReleased: (sectionIndex: number, blockIndex: number) => boolean,
+    /** "Is this fixture stranded?" — true when NO intact block remains within
+     *  reach of the given housing position, i.e. the room around the light has
+     *  been torn away. Backed by StructureSystem.anyIntactBlockNear, whose input
+     *  (block.released) is monotonic, so a stranded fixture stays stranded and a
+     *  merely re-slept section (nothing released) keeps its lights. */
+    private readonly isStrandedFixture: (pos: THREE.Vector3) => boolean,
   ) {
     this.fixtures = fixturePositions.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
-    this.fixtureSection = fixtureSection;
-    this.fixtureAnchor = fixtureAnchor;
     this.dead = this.fixtures.map(() => false);
     this.order = this.fixtures.map((_, i) => i);
+    // Probe every fixture about once every ~6 frames (~0.1 s): a newly-stranded
+    // light goes dark imperceptibly fast without probing all of them each frame.
+    this.probeBudget = Math.max(1, Math.ceil(this.fixtures.length / 6));
 
     // --- emissive fixture strips (one instanced mesh, ~free) ---
     // A wide thin strip reads as a ceiling-mounted fluorescent fixture (not a
@@ -112,20 +111,30 @@ export class InteriorLights {
     this.time += dt;
     const cfg = GameConfig.interiorLights;
 
-    // Latch newly-destroyed fixtures dark AND gone. A fixture dies only when
-    // its OWNING SECTION is destroyed (its geometry is gone) — never when the
-    // section is merely re-slept, so intact dormant sections keep flickering.
-    // Zero-scaling the instance removes the box itself: a light must not
-    // outlive the room it lit, and neither may its housing.
-    for (let i = 0; i < this.fixtures.length; i++) {
+    // Latch newly-STRANDED fixtures dark AND gone. A fixture is stranded when
+    // nothing solid remains within reach of its housing — the room around it has
+    // been torn away, so the glowing box and the pool light it draws must both
+    // vanish (a light must not outlive the room it lit, and neither may its
+    // housing). This keys on ENCLOSURE, not on a specific "owning" block: prior
+    // fixes tied the light to one durable block (the ground-floor concrete deck,
+    // the toughest thing in the level) that survives partial collapse by design,
+    // so the light hung in the air above it. Checking "is anything still here?"
+    // is robust to WHICH block happens to survive. Zero-scaling the instance
+    // removes the box; the color goes black so no glow lingers.
+    //
+    // Probed on a rolling budget (a few fixtures per frame) so the AABB-probe
+    // cost is O(1) per frame regardless of fixture count. Only alive fixtures
+    // are probed; the latch is permanent (enclosure is monotonic).
+    for (let probes = this.probeBudget, n = 0; probes > 0 && n < this.fixtures.length; n++) {
+      const i = this.probeCursor;
+      this.probeCursor = (this.probeCursor + 1) % this.fixtures.length;
       if (this.dead[i]) continue;
-      const sec = this.fixtureSection[i];
-      if (sec >= 0 && this.isAnchorReleased(sec, this.fixtureAnchor[i])) {
-        this.dead[i] = true;
-        this.fixtureMesh.setColorAt(i, this.black); // no lingering glow
-        this.fixtureMesh.setMatrixAt(i, InteriorLights.ZERO_SCALE); // no floating box
-        this.fixtureMesh.instanceMatrix.needsUpdate = true;
-      }
+      probes--;
+      if (!this.isStrandedFixture(this.fixtures[i])) continue;
+      this.dead[i] = true;
+      this.fixtureMesh.setColorAt(i, this.black); // no lingering glow
+      this.fixtureMesh.setMatrixAt(i, InteriorLights.ZERO_SCALE); // no floating box
+      this.fixtureMesh.instanceMatrix.needsUpdate = true;
     }
 
     // Rank fixtures by distance to the player; the nearest ALIVE N get real lights.

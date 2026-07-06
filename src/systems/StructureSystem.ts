@@ -44,11 +44,6 @@ import type { WindField } from "./WindField";
 const NEIGHBOR_EPS = 0.05; // boxes within ~5 cm count as touching
 const BREAK_CHECK_INTERVAL = 0.1; // s between break sweeps per structure
 const MIN_SPLIT_DIM = 0.7; // don't split blocks already smaller than this
-// Fraction of a section's blocks that must be gone before it counts as
-// "destroyed" (its room geometry is effectively gone) — used to extinguish
-// that section's interior lights. Deliberately high so a lightly-grazed
-// survivor keeps its lights. (Bug 1.)
-const SECTION_DESTROYED_FRACTION = 0.6;
 // Sections at or below this block count (trees: 3 blocks) don't count toward
 // maxAwakeSections — that cap exists to bound the per-block-body explosion of
 // waking a whole WING, and a handful of 3-body trees is negligible. Without
@@ -271,18 +266,6 @@ export class StructureSystem {
       }
     }
     return false;
-  }
-
-  /**
-   * True once section `index` has lost enough blocks to count as destroyed.
-   * Monotonic (released blocks never return) and independent of wake/sleep —
-   * a re-slept intact section reads NOT destroyed — so InteriorLights can kill
-   * a room's lights on real destruction without killing them on re-sleep.
-   */
-  isSectionDestroyed(index: number): boolean {
-    const s = this.structures[index];
-    if (!s) return false;
-    return s.releasedCount >= s.blocks.length * SECTION_DESTROYED_FRACTION;
   }
 
   update(dt: number, time: number): void {

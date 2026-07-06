@@ -183,6 +183,11 @@ export const GameConfig = {
     decay: 1.8,
     flickerAmount: 0.62, // deeper, more unstable emergency flicker
     fixtureColor: 0x9fb08a, // sickly green-white emergency tint
+    // A fixture with NO intact block this close to its housing has been
+    // stranded — its room is gone — so it goes dark and its box vanishes. This
+    // is what kills floating lights: enclosure, not a durable anchor block. Sized
+    // to comfortably reach the ceiling deck / walls that mount a live fixture.
+    strandRange: 1.5,
   },
 
   // Interior wind shelter (StructureSystem.shelterExposureAt). Cheap AABB

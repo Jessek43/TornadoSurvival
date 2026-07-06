@@ -20,9 +20,10 @@ import type { BlockDef, SectionSpec } from "./Blueprints";
  *   4. parametric switchback stairs, sized to fit exactly inside the void
  *   5. interior walls: a corridor spine (E–W) + ribs (N–S) connecting the
  *      stairwells, rooms off them, doors on a rhythm — all void-clipped
- *   6. ceiling fixtures anchored to a specific floor-slab block, so on
- *      destruction the fixture dies with THAT local geometry (not the wing),
- *      and on re-sleep it is retained
+ *   6. ceiling fixtures hung just below the deck; each is extinguished at
+ *      runtime by LOCAL ENCLOSURE (InteriorLights darkens it once no intact
+ *      block remains near it), so a light dies exactly when its room is torn
+ *      away — never left floating, and kept through a mere re-sleep
  *   7. perimeter windows (exterior only, transparent/destructible)
  *
  * Output shape is unchanged — 12 wing sections + 2 stairwell sections + a
@@ -145,11 +146,7 @@ function clipTileToVoids(t: Rect): Rect[] {
   return rects.filter((r) => r.x1 - r.x0 > 0.1 && r.z1 - r.z0 > 0.1);
 }
 
-// A slab record so fixtures can anchor to the exact deck block beneath them.
-type SlabRef = { x: number; z: number; idx: number };
-
-/** Build one floor's deck for a wing as ~4.5 m tiles, each clipped to the void.
- *  Records every emitted slab (with its index in `blocks`) for fixture anchoring. */
+/** Build one floor's deck for a wing as ~4.5 m tiles, each clipped to the void. */
 function addDeck(
   blocks: BlockDef[],
   xMin: number,
@@ -158,7 +155,6 @@ function addDeck(
   zMax: number,
   deckTopY: number,
   material: MaterialId,
-  slabs: SlabRef[] | null,
 ): void {
   const STEP = 4.5;
   for (let x0 = xMin; x0 < xMax - 0.05; x0 += STEP) {
@@ -168,24 +164,10 @@ function addDeck(
       for (const r of clipTileToVoids({ x0, x1, z0, z1 })) {
         const cx = (r.x0 + r.x1) / 2;
         const cz = (r.z0 + r.z1) / 2;
-        if (slabs) slabs.push({ x: cx, z: cz, idx: blocks.length });
         blocks.push(block(material, cx, deckTopY - 0.24, cz, r.x1 - r.x0, 0.24, r.z1 - r.z0));
       }
     }
   }
-}
-
-function nearestSlab(slabs: SlabRef[], x: number, z: number): number {
-  let best = 0;
-  let bestD = Infinity;
-  for (const s of slabs) {
-    const d = (s.x - x) ** 2 + (s.z - z) ** 2;
-    if (d < bestD) {
-      bestD = d;
-      best = s.idx;
-    }
-  }
-  return best;
 }
 
 // ===========================================================================
@@ -274,8 +256,10 @@ function addInteriorWall(
 // Step 3–6 per wing.
 // ===========================================================================
 
-/** addFixture(position, anchorBlockIndex-within-this-section). */
-type AddFixture = (f: Fixture, anchor: number) => void;
+/** addFixture(ceilingPosition). A fixture's life is governed by local enclosure
+ *  at runtime (InteriorLights: dark once no intact block is near it), so it
+ *  carries no owning-block index — position is all it needs. */
+type AddFixture = (f: Fixture) => void;
 
 function buildWing(gx: number, gz: number, addFixture: AddFixture): SectionSpec {
   const xMin = X_EDGES[gx];
@@ -289,12 +273,11 @@ function buildWing(gx: number, gz: number, addFixture: AddFixture): SectionSpec 
 
   for (let f = 0; f < floors; f++) {
     const y = f * FLOOR_H;
-    const slabs: SlabRef[] = [];
 
     // (2) DECK — clipped around the void. The ground floor's deck is lifted a
     // few cm so its top clears the Level ground plane (both were at y=0 → the
     // coplanar z-fighting/flicker); the tiny threshold auto-steps seamlessly.
-    addDeck(blocks, xMin, xMax, zMin, zMax, f === 0 ? 0.06 : y, "concrete", slabs);
+    addDeck(blocks, xMin, xMax, zMin, zMax, f === 0 ? 0.06 : y, "concrete");
 
     // (3) COLUMNS — wing corners, vertically aligned. Skipped where they'd
     // overlap the void OR stand in a corridor: the x=0 entrance rib runs along
@@ -344,10 +327,13 @@ function buildWing(gx: number, gz: number, addFixture: AddFixture): SectionSpec 
       }
     }
 
-    // (6) FIXTURES — corridor cells + room cells, anchored to the deck beneath.
+    // (6) FIXTURES — corridor cells + room cells, hung just below the ceiling
+    // deck. No owning block: InteriorLights extinguishes a fixture once nothing
+    // solid remains within reach of it (enclosure), which is what a live
+    // ceiling fixture always has (the deck above it, the walls around it).
     const add = (fx: number, fz: number): void => {
       if (overlapsVoid(fx, fz)) return;
-      addFixture([fx, y + FLOOR_H - CEIL_GAP, fz], nearestSlab(slabs, fx, fz));
+      addFixture([fx, y + FLOOR_H - CEIL_GAP, fz]);
     };
     // spine cells within this wing
     if (zMin < SPINE_Z && zMax > SPINE_Z) {
@@ -372,7 +358,7 @@ function buildWing(gx: number, gz: number, addFixture: AddFixture): SectionSpec 
 
   // Roof deck (clipped around the void) + parapet + mechanical units.
   const roofY = floors * FLOOR_H;
-  addDeck(blocks, xMin, xMax, zMin, zMax, roofY, "cladding", null);
+  addDeck(blocks, xMin, xMax, zMin, zMax, roofY, "cladding");
   const parapet = (axis: "x" | "z", perp: number): void => {
     const a0 = axis === "x" ? xMin : zMin;
     const a1 = axis === "x" ? xMax : zMax;
@@ -418,7 +404,10 @@ function buildPortico(): SectionSpec {
  * diameter) so the whole run is cleanly walkable; the flight one storey up sits
  * exactly FLOOR_H above the same lane, so headroom clears the capsule. The
  * matching floor-slab opening is produced by the deck-clip (step 2), so you can
- * pass floor-to-floor. Fixtures anchor to each floor-landing block.
+ * pass floor-to-floor. Fixtures hang just in front of the back shaft wall (not
+ * mid-shaft): a stairwell light must sit next to real geometry so enclosure
+ * keeps it lit while the shaft stands and drops it the moment the shaft is torn
+ * out — a fixture floating in the open shaft void would read as stranded at once.
  */
 function buildStairwell(cx: number, cz: number, side: "A" | "B", addFixture: AddFixture): SectionSpec {
   const blocks: BlockDef[] = [];
@@ -434,6 +423,9 @@ function buildStairwell(cx: number, cz: number, side: "A" | "B", addFixture: Add
   const landW = 2 * (laneOffX + flightW / 2);
   const zFront = cz + HD;
   const zBack = cz - HD;
+  // Fixtures mount just in front of the back shaft wall so a live one always has
+  // solid geometry within reach (the wall spans every floor at x∈[cx±HW]).
+  const mountZ = zBack + WALL_T / 2 + 0.35;
   const runFront = zFront - landingDepth;
   const runBack = zBack + landingDepth;
   const run = (runFront - runBack) / stepsPerFlight;
@@ -452,10 +444,9 @@ function buildStairwell(cx: number, cz: number, side: "A" | "B", addFixture: Add
       const zc = runBack + (i - 0.5) * run;
       blocks.push(block("concrete", laneB, baseB + i * rise - treadThick, zc, flightW, treadThick, run + 0.04));
     }
-    // Floor-landing (arrival at floor f+1). Anchor this floor's fixture to it.
-    const landingIdx = blocks.length;
+    // Floor-landing (arrival at floor f+1).
     blocks.push(block("concrete", cx, yBase + FLOOR_H - 0.24, zFront - landingDepth / 2, landW, 0.24, landingDepth));
-    addFixture([cx, (f + 1) * FLOOR_H + FLOOR_H - 0.4, cz], landingIdx);
+    addFixture([cx, (f + 1) * FLOOR_H + FLOOR_H - 0.4, mountZ]);
   }
 
   // Shaft walls on 3 sides (open toward the corridor: A→+x, B→−x).
@@ -466,8 +457,8 @@ function buildStairwell(cx: number, cz: number, side: "A" | "B", addFixture: Add
     blocks.push(block("concrete", cx, y, zFront, 2 * HW, FLOOR_H, WALL_T));
     blocks.push(block("concrete", farX, y, cz, WALL_T, FLOOR_H, 2 * HD));
   }
-  // Ground-floor fixture, anchored to the first shaft wall (always present).
-  addFixture([cx, FLOOR_H - 0.4, cz], 0);
+  // Ground-floor fixture, mounted against the back shaft wall.
+  addFixture([cx, FLOOR_H - 0.4, mountZ]);
   // Stair penthouse cap (massing; reads like the reference circulation core).
   blocks.push(block("cladding", cx, FLOORS * FLOOR_H - 0.05, cz, 2 * HW, 2.3, 2 * HD));
   return { name: `stair_${side}`, blocks };
@@ -487,7 +478,7 @@ function buildCar(x: number, z: number, alongX: boolean): SectionSpec {
 }
 
 function buildPole(x: number, z: number, addFixture: AddFixture): SectionSpec {
-  addFixture([x, 5.2, z], 0); // anchor to the pole block itself
+  addFixture([x, 5.2, z]); // on the pole itself — dark once the pole is gone
   return { name: "pole", blocks: [block("metal", x, 0, z, 0.25, 5.5, 0.25)] };
 }
 
@@ -521,38 +512,27 @@ function buildBarrier(x: number, z: number, alongX: boolean): SectionSpec {
 
 /**
  * buildHospital() returns:
- *  - sections: fed to StructureSystem (order preserved 1:1 with fixture owners)
- *  - lightFixtures / fixtureSection / fixtureAnchor: parallel arrays. A fixture
- *    is owned by section `fixtureSection[i]` and ANCHORED to that section's
- *    block `fixtureAnchor[i]` — InteriorLights kills the fixture (mesh + light)
- *    exactly when that anchor block is released (genuine destruction), and
- *    retains it when the section merely re-sleeps (anchor never released).
+ *  - sections: fed to StructureSystem.
+ *  - lightFixtures: ceiling-fixture positions for InteriorLights. Each fixture's
+ *    life is governed at runtime by LOCAL ENCLOSURE (a light goes dark once no
+ *    intact block remains within reach of it), so no owning-section/anchor
+ *    bookkeeping is needed here — a position is all a fixture carries.
  */
 export function buildHospital(): {
   sections: SectionSpec[];
   lightFixtures: Fixture[];
-  fixtureSection: number[];
-  fixtureAnchor: number[];
 } {
   const sections: SectionSpec[] = [];
   const lightFixtures: Fixture[] = [];
-  const fixtureSection: number[] = [];
-  const fixtureAnchor: number[] = [];
-  const fixtureAdder =
-    (sectionIndex: number): AddFixture =>
-    (f, anchor) => {
-      lightFixtures.push(f);
-      fixtureSection.push(sectionIndex);
-      fixtureAnchor.push(anchor);
-    };
+  const addFixture: AddFixture = (f) => lightFixtures.push(f);
 
   for (let gx = 0; gx < N_COL; gx++) {
     for (let gz = 0; gz < N_ROW; gz++) {
-      sections.push(buildWing(gx, gz, fixtureAdder(sections.length)));
+      sections.push(buildWing(gx, gz, addFixture));
     }
   }
   for (const s of STAIRS) {
-    sections.push(buildStairwell(s.cx, s.cz, s.side, fixtureAdder(sections.length)));
+    sections.push(buildStairwell(s.cx, s.cz, s.side, addFixture));
   }
   sections.push(buildPortico());
 
@@ -568,7 +548,7 @@ export function buildHospital(): {
     }
   }
   for (const [px, pz] of [[-25, 5.5], [25, 5.5], [-25, 15.5], [25, 15.5], [0, 10.5]]) {
-    sections.push(buildPole(px, pz, fixtureAdder(sections.length)));
+    sections.push(buildPole(px, pz, addFixture));
   }
   sections.push(buildOutbuilding(-52, -44));
   for (const [dx, dz] of [[-30, 4], [-30, 6.5], [30, 18], [33, 18]]) {
@@ -578,5 +558,5 @@ export function buildHospital(): {
     sections.push(buildBarrier(bx, bz, ax === 1));
   }
 
-  return { sections, lightFixtures, fixtureSection, fixtureAnchor };
+  return { sections, lightFixtures };
 }
