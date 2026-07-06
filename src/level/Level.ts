@@ -33,7 +33,7 @@ export class Level {
     // Streets + sidewalks (layout owned by Neighborhood.ts so the houses and
     // trees line up with the paint).
     for (const p of STREET_PATCHES) {
-      this.addPatch(scene, p.x, p.z, p.w, p.d, p.color, 0.03);
+      this.addPatch(scene, p.x, p.z, p.w, p.d, p.color, p.y);
     }
 
     // Physical ground — a thick static slab whose top face is y = 0.

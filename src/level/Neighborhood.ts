@@ -37,20 +37,30 @@ export interface StreetPatch {
   w: number;
   d: number;
   color: number;
+  /** Render height above the ground plane. Distinct layers keep overlapping
+   *  paint from sharing a plane: the N–S cross streets pass OVER the E–W main
+   *  street and its sidewalks, so they sit a hair higher and the depth buffer
+   *  orders them cleanly (asphalt reads on top of the sidewalk at each corner)
+   *  instead of z-fighting where they were coplanar. */
+  y: number;
 }
 
 const ASPHALT = 0x232526;
 const SIDEWALK = 0x45464a;
+// Paint layers, each clearly separated so no two overlapping planes are coplanar.
+const Y_STREET = 0.03; // main street + sidewalks (mutually non-overlapping)
+const Y_CROSS = 0.045; // cross streets, drawn above where they cross the main street
 
 /** Flat ground-paint rectangles for the streets + sidewalks (Level draws these). */
 export const STREET_PATCHES: StreetPatch[] = [
   // Main street + its two sidewalk strips.
-  { x: 0, z: MAIN_Z, w: 150, d: STREET_W, color: ASPHALT },
-  { x: 0, z: MAIN_Z - STREET_W / 2 - 0.9, w: 150, d: 1.8, color: SIDEWALK },
-  { x: 0, z: MAIN_Z + STREET_W / 2 + 0.9, w: 150, d: 1.8, color: SIDEWALK },
-  // Cross streets (run from behind the houses down past the hospital).
-  { x: -CROSS_X, z: -14, w: STREET_W, d: 90, color: ASPHALT },
-  { x: CROSS_X, z: -14, w: STREET_W, d: 90, color: ASPHALT },
+  { x: 0, z: MAIN_Z, w: 150, d: STREET_W, color: ASPHALT, y: Y_STREET },
+  { x: 0, z: MAIN_Z - STREET_W / 2 - 0.9, w: 150, d: 1.8, color: SIDEWALK, y: Y_STREET },
+  { x: 0, z: MAIN_Z + STREET_W / 2 + 0.9, w: 150, d: 1.0, color: SIDEWALK, y: Y_STREET },
+  // Cross streets (run from behind the houses down past the hospital); layered
+  // above the main street so the crossing overlaps order cleanly, not z-fight.
+  { x: -CROSS_X, z: -14, w: STREET_W, d: 90, color: ASPHALT, y: Y_CROSS },
+  { x: CROSS_X, z: -14, w: STREET_W, d: 90, color: ASPHALT, y: Y_CROSS },
 ];
 
 /** Author a block by its BOTTOM y (same helper style as Hospital.ts). */
