@@ -5,6 +5,7 @@ import { MATERIALS, type BlockMaterialDef, type MaterialId } from "../level/Mate
 import type { Physics } from "../core/Physics";
 import type { QualitySettings } from "../config/QualitySettings";
 import type { WindField } from "./WindField";
+import { applyWorldSpaceMap, getBlockTexture } from "./BlockTextures";
 
 /**
  * Owns every loose dynamic block, under a hard budget (QualitySettings).
@@ -71,18 +72,22 @@ export class DebrisManager {
     const cube = new THREE.BoxGeometry(1, 1, 1);
     for (const id of Object.keys(MATERIALS) as MaterialId[]) {
       const def: BlockMaterialDef = MATERIALS[id];
-      const mesh = new THREE.InstancedMesh(
-        cube,
-        new THREE.MeshStandardMaterial({
-          color: 0xffffff, // base color lives in per-instance colors
-          roughness: def.roughness,
-          metalness: def.metalness,
-          transparent: def.transparent ?? false,
-          opacity: def.opacity ?? 1,
-          depthWrite: !(def.transparent ?? false),
-        }),
-        this.budget,
-      );
+      const material = new THREE.MeshStandardMaterial({
+        color: 0xffffff, // base color lives in per-instance colors
+        roughness: def.roughness,
+        metalness: def.metalness,
+        transparent: def.transparent ?? false,
+        opacity: def.opacity ?? 1,
+        depthWrite: !(def.transparent ?? false),
+      });
+      // Same world-space detail texture as the standing structures, so a
+      // block keeps its surface when it tears free (see BlockTextures).
+      const detail = getBlockTexture(id);
+      if (detail) {
+        material.map = detail;
+        applyWorldSpaceMap(material);
+      }
+      const mesh = new THREE.InstancedMesh(cube, material, this.budget);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.castShadow = def.castShadow ?? true;
       mesh.receiveShadow = true;

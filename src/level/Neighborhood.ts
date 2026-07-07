@@ -185,6 +185,15 @@ function buildHouse(
   put("wood", 1.2, 0, HD + 1.6, 0.18, 2.3, 0.18);
   put("wood", 0, 2.3, HD + 1.0, 3.2, 0.16, 2.2); // porch roof
 
+  // Ground-floor furnishing — freestanding clutter clear of the door path,
+  // so an entered house reads lived-in (and sheds furniture debris when it
+  // goes). Same block idiom as the hospital props.
+  put("wood", -1.9, 0, -2.2, 1.7, 0.5, 0.9); // bed frame
+  put("propWhite", -1.9, 0.5, -2.2, 1.5, 0.2, 0.8); // bedding
+  put("wood", 1.8, 0, -2.6, 0.9, 0.72, 0.9); // table
+  put("furniture", 1.9, 0, 1.6, 1.6, 0.7, 0.7); // sofa
+  put("wood", -2.4, 0, 2.4, 0.9, 1.8, 0.5); // wardrobe
+
   return { name: "house", blocks };
 }
 
@@ -207,6 +216,10 @@ function buildShop(cx: number, cz: number): SectionSpec {
   // Flat roof + parapet lip.
   blocks.push(block("cladding", cx, h - 0.12, cz, 2 * hw, 0.24, 2 * hd));
   blocks.push(block("brick", cx, h + 0.12, cz - hd + 0.15, 2 * hw, 0.5, 0.3));
+  // Interior: sales counter + two stocked shelves abutting the back wall.
+  blocks.push(block("wood", cx - 1.5, 0, cz + hd - 2.2, 3, 1.0, 0.6));
+  blocks.push(block("wood", cx, 1.2, cz - hd + 0.35, 2 * hw - 1.6, 0.3, 0.45));
+  blocks.push(block("wood", cx, 2.0, cz - hd + 0.35, 2 * hw - 1.6, 0.3, 0.45));
   return { name: "shop", blocks };
 }
 

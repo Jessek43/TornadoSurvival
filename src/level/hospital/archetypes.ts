@@ -153,10 +153,14 @@ export function furnishWardFloor(ctx: WingCtx, f: number): void {
   const intBackZ = facadeZ + inward * (ROOM_D + CORR_W + INT_D); // open back edge
 
   /** One room off the ward corridor. Separator walls sit just inside the
-   *  interval edges (clear of the rib walls); the doorway is offset to the
-   *  high-x side while the bed band lives low-x, so entry is never behind
-   *  furniture. Records the room for verify's enterability asserts. */
-  const addRoom = (room: RoomInterval, kind: "facade" | "interior"): void => {
+   *  interval edges (clear of the rib walls); the doorway sits on the
+   *  boundary side while the bed anchors to a separator wall, so entry is
+   *  never behind furniture. Records the room for verify's enterability
+   *  asserts and returns the door placement for the corridor dressing. */
+  const addRoom = (
+    room: RoomInterval,
+    kind: "facade" | "interior",
+  ): { doorC: number; bedLow: boolean; xIn0: number; xIn1: number } | null => {
     const wallZ = kind === "facade" ? frontWallZ : intWallZ;
     const zNear = kind === "facade" ? faceIn : intWallZ + inward * (P.wallT / 2);
     const zFar = kind === "facade" ? frontWallZ - inward * (P.wallT / 2) : intBackZ;
@@ -172,8 +176,18 @@ export function furnishWardFloor(ctx: WingCtx, f: number): void {
       );
     }
 
-    // Corridor wall with a 1.4 m clear doorway toward the high-x side.
-    const doorC = xIn1 - 1.05;
+    // The bed cluster anchors to a SEPARATOR side wall, never a wing
+    // boundary (corner columns live 0.3–0.8 m inside boundary walls and the
+    // first slice's beds collided with them). When only the high edge has a
+    // separator, the whole room mirrors: bed high, door low.
+    if (!room.sepLo && !room.sepHi) return null; // can't happen: every wing has a rib
+    const bedLow = room.sepLo;
+    const bedX = bedLow ? xIn0 : xIn1;
+    const bedFacing: props.Facing = bedLow ? "+x" : "-x";
+    const doorSideX = bedLow ? xIn1 : xIn0;
+
+    // Corridor wall with a 1.4 m clear doorway on the door side.
+    const doorC = bedLow ? xIn1 - 1.05 : xIn0 + 1.05;
     for (const [w0, w1] of [[xIn0, doorC - 0.95], [doorC + 0.95, xIn1]] as const) {
       if (w1 - w0 > 0.1) {
         blocks.push(block("cladding", (w0 + w1) / 2, base, wallZ, w1 - w0, h, P.wallT));
@@ -184,36 +198,40 @@ export function furnishWardFloor(ctx: WingCtx, f: number): void {
     }
     blocks.push(block("wood", doorC, base + 2.1, wallZ, 1.9, h - 2.1, P.wallT)); // header
     // Open door leaf flat against the corridor-side wall face beside the
-    // opening — the door reads without a single collider in the passage.
+    // opening (on the bed side, where the wall piece is long) — the door
+    // reads without a single collider in the passage.
     const corrSide = kind === "facade" ? inward : -inward;
     const corrFaceZ = wallZ + corrSide * (P.wallT / 2);
-    if (doorC - 0.95 - xIn0 > 0.95) {
-      blocks.push(
-        block("wood", doorC - 0.95 - 0.46, base, corrFaceZ + corrSide * 0.025, 0.9, 2.0, 0.05),
-      );
+    const leafFits = bedLow ? doorC - 0.95 - xIn0 > 0.95 : xIn1 - (doorC + 0.95) > 0.95;
+    if (leafFits) {
+      const leafX = bedLow ? doorC - 0.95 - 0.46 : doorC + 0.95 + 0.46;
+      blocks.push(block("wood", leafX, base, corrFaceZ + corrSide * 0.025, 0.9, 2.0, 0.05));
     }
     blocks.push(
       ...props.wallPanel(doorC, base + 2.45, corrFaceZ, dirToFacing(corrSide), "signRed", 0.5, 0.3),
     );
 
-    // FURNITURE — bed along x, headboard on the LOW side wall, in the band
+    // FURNITURE — bed along x, headboard on the separator wall, in the band
     // away from the door wall; cabinet beside the headboard.
-    const bedZ = kind === "facade" ? faceIn + inward * 0.75 : intBackZ - inward * 0.75;
-    blocks.push(...props.bed(xIn0, base, bedZ, "+x"));
-    blocks.push(...props.bedheadPanel(xIn0, base, bedZ, "+x"));
-    blocks.push(...props.bedsideCabinet(xIn0, base, bedZ + inward * 0.85, "+x"));
+    const bedZ = kind === "facade" ? faceIn + inward * 0.8 : intBackZ - inward * 0.8;
+    blocks.push(...props.bed(bedX, base, bedZ, bedFacing));
+    blocks.push(...props.bedheadPanel(bedX, base, bedZ, bedFacing));
+    blocks.push(...props.bedsideCabinet(bedX, base, bedZ + inward * 0.9, bedFacing));
     if (kind === "facade" && room.window) {
       // Drapes flank the window flat on the facade wall — but never in the
-      // high-x band, which is the walking corridor from door to window.
+      // door-side band, which is the walking corridor from door to window.
       for (const dx of [room.window[0] + 0.25, room.window[1] - 0.25]) {
-        if (dx > xIn0 + 0.3 && dx < xIn1 - 1.2) {
+        const clearOfDoorBand = bedLow ? dx < xIn1 - 1.2 : dx > xIn0 + 1.2;
+        if (dx > xIn0 + 0.3 && dx < xIn1 - 0.3 && clearOfDoorBand) {
           blocks.push(...props.windowDrape(dx, base, faceIn, dirToFacing(inward)));
         }
       }
     }
     if (kind === "facade" && room.wide && P.furnish.wardExtras) {
-      blocks.push(...props.ivStand(xIn0 + 1.9, base, bedZ, "+x"));
-      blocks.push(...props.chair(xIn1, base, faceIn + inward * 0.9, "-x"));
+      blocks.push(...props.ivStand(bedX + (bedLow ? 1.9 : -1.9), base, bedZ, bedFacing));
+      blocks.push(
+        ...props.chair(doorSideX, base, faceIn + inward * 1.05, bedLow ? "-x" : "+x"),
+      );
     }
     addFixture([(xIn0 + xIn1) / 2, fy, (zNear + zFar) / 2]);
 
@@ -229,24 +247,31 @@ export function furnishWardFloor(ctx: WingCtx, f: number): void {
       kind,
       name: `wing_${gx}${gz} f${f} ${kind} @${room.x0.toFixed(0)}`,
     });
+    return { doorC, bedLow, xIn0, xIn1 };
   };
 
   const intervals = planRoomIntervals(xMin, xMax);
-  for (const room of intervals.slice(0, P.furnish.roomsPerFloor)) addRoom(room, "facade");
+  let mainRoom: { doorC: number; bedLow: boolean; xIn0: number; xIn1: number } | null = null;
+  for (const room of intervals.slice(0, P.furnish.roomsPerFloor)) {
+    const placed = addRoom(room, "facade");
+    mainRoom = mainRoom ?? placed;
+  }
   for (const room of intervals.slice(0, P.furnish.interiorRoomsPerFloor)) {
     addRoom(room, "interior");
   }
 
-  // CORRIDOR DRESSING — orange handrail bumpers + wall chart + a waiting
-  // chair on the widest room's low wall pieces (both corridor walls), plus
-  // the rib-corridor rails (image-1: rails line every corridor).
-  const wide = intervals[0];
-  if (wide) {
-    const pieceX0 = wide.x0 + P.wallT + 0.1;
-    const pieceX1 = wide.x1 - P.wallT - 2.1; // stop short of the doorway
-    if (pieceX1 - pieceX0 > 1.2) {
-      const railW = Math.min(pieceX1 - pieceX0, 2.6);
-      const railC = pieceX0 + railW / 2;
+  // CORRIDOR DRESSING — orange handrail bumpers + wall chart on the main
+  // room's LONG wall piece (the bed side — clear of both the doorway and
+  // the open door leaf), a freestanding waiting chair 0.1 m off the wall
+  // (never sharing the rail's wall plane), plus the rib-corridor rails
+  // (image-1: rails line every corridor).
+  if (mainRoom) {
+    // Rail zone: the long piece, minus the leaf's footprint next to the door.
+    const r0 = mainRoom.bedLow ? mainRoom.xIn0 + 0.1 : mainRoom.doorC + 1.96;
+    const r1 = mainRoom.bedLow ? mainRoom.doorC - 1.96 : mainRoom.xIn1 - 0.1;
+    if (r1 - r0 > 1.2) {
+      const railW = Math.min(r1 - r0, 2.6);
+      const railC = (r0 + r1) / 2;
       for (const [wz, s] of [
         [frontWallZ + inward * (P.wallT / 2), inward],
         [intWallZ - inward * (P.wallT / 2), -inward],
@@ -261,8 +286,8 @@ export function furnishWardFloor(ctx: WingCtx, f: number): void {
       );
       blocks.push(
         ...props.chair(
-          railC + railW / 2 + 0.55, base,
-          intWallZ - inward * (P.wallT / 2), dirToFacing(-inward),
+          railC, base,
+          intWallZ - inward * (P.wallT / 2 + 0.1), dirToFacing(-inward),
         ),
       );
     }

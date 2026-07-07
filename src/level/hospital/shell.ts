@@ -366,11 +366,16 @@ function buildWing(
 // Stairwell — parametric switchback, sized to fit EXACTLY inside its reserved
 // void. Geometry carried over from the play-proven builder (rise 0.3 < the
 // 0.5 autostep, run 0.8 > capsule diameter, mid-landing + floor-landing per
-// storey); the loop just runs FLOORS_MAX−1 storeys now. Two changes:
+// storey). Notes:
 //  - shaft walls sit fully INSIDE the void (the old walls straddled the void
 //    edge, so their tops z-fought the deck tops along a 15 cm strip);
 //  - treads abut exactly (no overlap) so tread/landing tops — which share the
-//    arrival plane by design — never overlap coplanar.
+//    arrival plane by design — never overlap coplanar;
+//  - ROOF ACCESS: the storey loop runs one flight past the top floor, into a
+//    hollow stair head (the old solid penthouse cap) whose open side steps
+//    out onto the roof deck — arrival landing top 25.20, roof top 25.24, a
+//    4 cm autostep. Being on the roof means no ceiling: shelterExposureAt
+//    correctly reads full exposure up there.
 // ===========================================================================
 
 function buildStairwell(cx: number, side: "A" | "B", addFixture: AddFixture): SectionSpec {
@@ -387,7 +392,9 @@ function buildStairwell(cx: number, side: "A" | "B", addFixture: AddFixture): Se
   const runBack = zBack + S.landingDepth;
   const run = (runFront - runBack) / S.stepsPerFlight;
 
-  for (let f = 0; f < FLOORS_MAX - 1; f++) {
+  // One extra storey past the top floor: the final flight arrives at the
+  // roof plane inside the stair head (roof access).
+  for (let f = 0; f < FLOORS_MAX; f++) {
     const yBase = f * H;
     const laneA = cx - S.laneOff;
     const laneB = cx + S.laneOff;
@@ -440,10 +447,16 @@ function buildStairwell(cx: number, side: "A" | "B", addFixture: AddFixture): Se
     blocks.push(block("concrete", cx, base, zFront - P.wallT / 2, 2 * S.hw, h, P.wallT));
     blocks.push(block("concrete", farX, base, P.spineZ, P.wallT, h, 2 * S.hd - 2 * P.wallT));
   }
-  // Stair penthouse cap (reads as the circulation core from outside),
-  // resting flush ON the shaft-wall tops — plane contact supports it without
-  // sharing any same-facing plane.
-  blocks.push(block("cladding", cx, FLOORS_MAX * H, P.spineZ, 2 * S.hw, 2.3, 2 * S.hd));
+  // Stair HEAD (was a solid penthouse cap): the three shaft walls continue
+  // 2.2 m above the roof plane with the open side kept open, roofed by a
+  // slab resting flush on their tops — the final flight arrives inside and
+  // the player steps out onto the roof deck.
+  const headBase = FLOORS_MAX * H;
+  blocks.push(block("concrete", cx, headBase, zBack + P.wallT / 2, 2 * S.hw, 2.2, P.wallT));
+  blocks.push(block("concrete", cx, headBase, zFront - P.wallT / 2, 2 * S.hw, 2.2, P.wallT));
+  blocks.push(block("concrete", farX, headBase, P.spineZ, P.wallT, 2.2, 2 * S.hd - 2 * P.wallT));
+  blocks.push(block("cladding", cx, headBase + 2.2, P.spineZ, 2 * S.hw, 0.24, 2 * S.hd));
+  addFixture([cx - S.laneOff, headBase + 1.9, fixtureZ]);
   return { name: `stair_${side}`, blocks };
 }
 
@@ -558,8 +571,9 @@ export function buildShell(opts: ShellOptions = {}): HospitalShell {
   for (const [dx, dz] of [[-30, 4], [-30, 6.5], [30, 13], [33, 13]]) {
     sections.push(buildDumpster(dx, dz));
   }
+  // Drive bollards past the canopy (moved out of the glazed podium zone).
   for (const bx of [-6, 6]) {
-    sections.push(buildBarrier(bx, 1));
+    sections.push(buildBarrier(bx, 6.2));
   }
 
   return { sections, lightFixtures, exteriorFaces };

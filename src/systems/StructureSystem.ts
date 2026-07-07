@@ -7,6 +7,7 @@ import type { Physics } from "../core/Physics";
 import type { DebrisManager } from "./DebrisManager";
 import type { TornadoSystem } from "./TornadoSystem";
 import type { WindField } from "./WindField";
+import { applyWorldSpaceMap, getBlockTexture } from "./BlockTextures";
 
 /**
  * Builds structures from blueprints and runs their destruction lifecycle.
@@ -125,21 +126,25 @@ export class StructureSystem {
     const cube = new THREE.BoxGeometry(1, 1, 1);
     for (const [id, count] of counts) {
       const def: BlockMaterialDef = MATERIALS[id];
-      const mesh = new THREE.InstancedMesh(
-        cube,
-        // Base color lives in per-instance colors (see below); the material
-        // color stays white so it doesn't double-tint.
-        new THREE.MeshStandardMaterial({
-          color: 0xffffff,
-          roughness: def.roughness,
-          metalness: def.metalness,
-          transparent: def.transparent ?? false,
-          opacity: def.opacity ?? 1,
-          // Glass: don't write depth so panes behind it still show through.
-          depthWrite: !(def.transparent ?? false),
-        }),
-        count,
-      );
+      // Base color lives in per-instance colors (see below); the material
+      // color stays white so it doesn't double-tint. Surface detail comes
+      // from a shared procedural texture sampled in world space (uniform
+      // texel density across block sizes) — see BlockTextures.
+      const material = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: def.roughness,
+        metalness: def.metalness,
+        transparent: def.transparent ?? false,
+        opacity: def.opacity ?? 1,
+        // Glass: don't write depth so panes behind it still show through.
+        depthWrite: !(def.transparent ?? false),
+      });
+      const detail = getBlockTexture(id);
+      if (detail) {
+        material.map = detail;
+        applyWorldSpaceMap(material);
+      }
+      const mesh = new THREE.InstancedMesh(cube, material, count);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // updated on release
       mesh.castShadow = def.castShadow ?? true;
       mesh.receiveShadow = true;
