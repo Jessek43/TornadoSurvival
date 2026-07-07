@@ -5,12 +5,17 @@ import { MATERIALS } from "../level/Materials";
 import type { WindField } from "../systems/WindField";
 import type { TornadoSystem } from "../systems/TornadoSystem";
 import type { PlayerController } from "../systems/PlayerController";
+import type { StructureSystem } from "../systems/StructureSystem";
+import type { DebrisManager } from "../systems/DebrisManager";
+import type { InteriorLights } from "../systems/InteriorLights";
 
 const PATH_CAPACITY = 2000; // ≈10 min of breadcrumbs at 0.3 s intervals
 
 /**
  * Developer overlay, enabled with ?debug in the URL:
- *  - FPS meter
+ *  - FPS meter + world counters (awake sections, block bodies, released,
+ *    debris, orphan-lit fixtures, draw calls) — the numbers behind the
+ *    "fps under destruction" and "no floating lights" verification gates
  *  - a live wind arrow at the player (direction + magnitude of the field)
  *  - a breadcrumb line tracing the tornado's path
  *  - a lil-gui panel that mutates GameConfig / MATERIALS live for balancing
@@ -29,6 +34,9 @@ export class DebugTools {
   private pathCount = 0;
   private pathTimer = 0;
   private time = 0;
+  /** World counters are recomputed at 1 Hz (they scan all blocks). */
+  private counterTimer = 1;
+  private counterText = "";
 
   // scratch
   private readonly wind = new THREE.Vector3();
@@ -40,6 +48,10 @@ export class DebugTools {
     private readonly windField: WindField,
     private readonly tornado: TornadoSystem,
     private readonly player: PlayerController,
+    private readonly structures: StructureSystem,
+    private readonly debris: DebrisManager,
+    private readonly interiorLights: InteriorLights,
+    private readonly renderer: THREE.WebGLRenderer,
   ) {
     this.label = document.createElement("div");
     this.label.style.cssText =
@@ -91,13 +103,36 @@ export class DebugTools {
 
     // FPS (exponential moving average keeps the readout from flickering)
     if (dt > 0) this.smoothedFps += (1 / dt - this.smoothedFps) * 0.05;
+
+    // World counters at 1 Hz — awake/bodies/released come straight off the
+    // public structure runtimes; orphan-lit re-probes every live fixture.
+    this.counterTimer += dt;
+    if (this.counterTimer >= 1) {
+      this.counterTimer = 0;
+      let awakeBig = 0;
+      let bodies = 0;
+      let released = 0;
+      for (const s of this.structures.structures) {
+        if (s.state === "awake" && s.blocks.length > 4) awakeBig++;
+        released += s.releasedCount;
+        for (const b of s.blocks) if (b.body) bodies++;
+      }
+      this.counterText =
+        ` · awake ${awakeBig}/${GameConfig.tornado.maxAwakeSections}` +
+        ` · bodies ${bodies} · released ${released}` +
+        ` · debris ${this.debris.active}/${this.debris.budget}` +
+        ` · orphanLit ${this.interiorLights.countOrphanLit()}` +
+        ` · draw ${this.renderer.info.render.calls}`;
+    }
+
     this.label.textContent =
       `${this.smoothedFps.toFixed(0)} fps · tornado ` +
       (this.tornado.active
         ? `${this.tornado.position.distanceTo(this.player.position).toFixed(0)}m @ ${(
             this.tornado.intensity * 100
           ).toFixed(0)}%`
-        : "idle");
+        : "idle") +
+      this.counterText;
 
     // Wind arrow at the player
     this.windField.sample(this.wind, this.player.position, this.time);

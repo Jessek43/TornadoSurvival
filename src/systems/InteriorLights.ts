@@ -107,6 +107,17 @@ export class InteriorLights {
     }
   }
 
+  /** Debug readout: fixtures still LIT whose enclosure is already gone — the
+   *  runtime "no floating lights" number. update() latches stranded fixtures
+   *  within a few frames, so this should read 0 whenever it's sampled. */
+  countOrphanLit(): number {
+    let n = 0;
+    for (let i = 0; i < this.fixtures.length; i++) {
+      if (!this.dead[i] && this.isStrandedFixture(this.fixtures[i])) n++;
+    }
+    return n;
+  }
+
   update(playerPos: THREE.Vector3, dt: number): void {
     this.time += dt;
     const cfg = GameConfig.interiorLights;

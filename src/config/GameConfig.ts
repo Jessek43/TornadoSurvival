@@ -110,8 +110,9 @@ export const GameConfig = {
   },
 
   // Where the hospital is centered on the ground (the tornado passes aim here
-  // + a lateral offset). Kept in sync with level/Hospital.ts.
-  hospitalCenter: { x: 0, z: -20 },
+  // + a lateral offset). Kept in sync with level/hospital/params.ts
+  // (footprint X[-32,32] × Z[-48,0] → center (0,-24)).
+  hospitalCenter: { x: 0, z: -24 },
 
   tornado: {
     // --- wind field shape (see WindField.ts for the math) ---
@@ -135,7 +136,7 @@ export const GameConfig = {
     // around the hospital, travelling a straight line (+ lateral jitter) that
     // aims at hospitalCenter offset sideways, then exiting → calm gap → next.
     moveSpeed: 6, // m/s ground speed during a pass
-    passRadius: 70, // m — spawn/exit distance from the hospital center
+    passRadius: 75, // m — spawn/exit distance from the hospital center (scaled with the 64×48 footprint)
     passRampIn: 5, // s — intensity 0→1 as the funnel approaches
     passRampOut: 5, // s — intensity 1→0 as it recedes
     passCountMin: 2,
@@ -146,10 +147,11 @@ export const GameConfig = {
     // bullseyes the building — it always passes to one side, so the opposite
     // wings survive. Diagnosis: a dead-center pass (offset≈0) legitimately
     // guts the whole footprint because the building is smaller than the
-    // damage swath; grazing (offset ≥ ~24 m) reliably leaves the far side
-    // intact. The pass still threatens whichever side it grazes.
-    lateralOffsetMin: 26,
-    lateralOffsetMax: 46,
+    // damage swath; grazing reliably leaves the far side intact. Rescaled
+    // from 26–46 for the 64×48 footprint: min 30 keeps the far facade
+    // (≥ ~54 m from the pass line) outside the ~32 m cladding-kill band.
+    lateralOffsetMin: 30,
+    lateralOffsetMax: 50,
     lateralJitter: 4, // rad/s-ish authority of the noise wobble on the path
 
     // A section wakes into per-block physics when the funnel is within this

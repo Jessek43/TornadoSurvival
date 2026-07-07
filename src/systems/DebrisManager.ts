@@ -112,6 +112,11 @@ export class DebrisManager {
     }
   }
 
+  /** Debug readout: currently active debris bodies (≤ budget). */
+  get active(): number {
+    return this.activeCount;
+  }
+
   /** Hand a block over to the debris system as a dynamic rigid body. */
   spawn(
     materialId: MaterialId,

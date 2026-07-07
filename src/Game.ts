@@ -101,7 +101,11 @@ export class Game {
     this.windField = new WindField(this.tornado, this.noise);
     this.funnelVisual = new FunnelVisual(this.scene, this.tornado, this.quality);
     this.debris = new DebrisManager(this.scene, this.physics, this.quality);
-    const hospital = buildHospital();
+    // ?bare = Phase-1 structural shell only (the perf-gate measurement mode);
+    // the default requests full detailing once the Phase-2 furnish pass lands.
+    const hospital = buildHospital({
+      detail: !new URLSearchParams(location.search).has("bare"),
+    });
     // Neighborhood sections (houses, shops, trees) are appended AFTER the
     // hospital's: fixture→section ownership indices point into the hospital
     // range, so the hospital must come first.
@@ -156,7 +160,17 @@ export class Game {
     // scene, physics world, audio graph, and listeners (flagged in the plan).
     this.roundUI.onRestart = () => location.reload();
     this.debug = DebugTools.enabled()
-      ? new DebugTools(uiRoot, this.scene, this.windField, this.tornado, this.player)
+      ? new DebugTools(
+          uiRoot,
+          this.scene,
+          this.windField,
+          this.tornado,
+          this.player,
+          this.structures,
+          this.debris,
+          this.interiorLights,
+          this.renderer,
+        )
       : null;
   }
 

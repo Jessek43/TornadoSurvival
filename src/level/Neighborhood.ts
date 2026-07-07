@@ -13,7 +13,7 @@ import type { BlockDef, SectionSpec } from "./Blueprints";
  * foliage(250) strips first, wood(400) houses flatten, brick(550) survives
  * grazes, hospital concrete(1600) endures.
  *
- * Layout (hospital envelope X[-28,28] × Z[-40,0]; player spawns at z=20):
+ * Layout (hospital envelope X[-32,32] × Z[-48,0]; player spawns at z=20):
  *  - Main street E–W at z≈24.5, just north of the parking lot (the player
  *    spawns on its south edge, hospital across the lot).
  *  - Two cross streets N–S at x=±40 flanking the hospital block.
@@ -289,9 +289,11 @@ export function buildNeighborhood(): SectionSpec[] {
     sections.push(buildTree(x + jit(), MAIN_Z - STREET_W / 2 - 2.4, scale()));
   }
   // Cross streets, inner row (between the hospital block and the street).
+  // Pushed out to ±36.6 and extended north for the 64×48 footprint: ≥3 m of
+  // trunk clearance to the ±32 wall, and the row still flanks the full depth.
   for (const side of [-1, 1]) {
-    for (let z = -44; z <= 16; z += 10) {
-      sections.push(buildTree(side * (CROSS_X - 4.6) + jit() * 0.5, z + jit() * 1.5, scale()));
+    for (let z = -52; z <= 16; z += 10) {
+      sections.push(buildTree(side * (CROSS_X - 3.4) + jit() * 0.5, z + jit() * 1.5, scale()));
     }
   }
   // Cross streets, outer row (in the gaps between the cross-street houses).

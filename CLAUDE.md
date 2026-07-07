@@ -11,6 +11,15 @@ npm run typecheck   # tsc --noEmit, strict — run this after every change
 npm run preview     # serve the production build
 ```
 
+## Skills
+
+Project skills live under `.claude/skills/` in two collections. They **auto-activate from their own `SKILL.md` when the task matches — this doc neither enables nor invokes them.**
+
+- **`web-engines/`** — per-engine web-rendering skills; the subset relevant here is **three.js** (`threejs-scene-setup`, `threejs-materials-lighting`, `threejs-gltf-loading` — Scene/renderer/loop, PBR materials & lighting, glTF loading + animation). Also ships `phaser-core`, `phaser-arcade-physics`, and `pixijs-rendering` for other web engines this project doesn't use.
+- **`disciplines/`** — engine-neutral game-craft: `performance-optimization`, `physics-tuning`, `game-feel`, `camera-systems`, `game-ui-ux`, `input-systems`, `level-design`, `procedural-gen`, `save-systems`, `audio-design`, `shader-programming`, `dialogue-systems`, `game-ai`.
+
+Lean on the **three.js** skills for Three.js geometry, mesh, material, lighting, and model-loading work; lean on the **discipline** skills (notably `performance-optimization` and `physics-tuning`) for the perf-budget and physics/collider work behind the norms below. Matching keys off each `SKILL.md` description, so **name the stack explicitly (Three.js / Rapier / TypeScript) in prompts** to make the right skill fire — Rapier has no dedicated skill, so physics work leans on `physics-tuning`.
+
 There is **no test suite** and no linter beyond `tsc`. `tsconfig` is strict with `noUnusedLocals`/`noUnusedParameters`/`noFallthroughCasesInSwitch` — dead code and unused params are hard errors, so keep edits tidy.
 
 ## Deployment (live)
@@ -22,12 +31,13 @@ There is **no test suite** and no linter beyond `tsc`. `tsconfig` is strict with
 ## Current status
 
 - **Game loop:** rounds (2–3 passes, gaps, warning → passes → result) ✅ · restart ✅ · win / "survived" result ✅. **Not yet:** main menu; a confirmed explicit lose/death result path.
+- **Hospital rebuild:** live. Phase 1 (shell) gated in ✅ · Phase 2 (ward detailing) in progress — rooms enterable, interior fit-out ongoing.
 - **Performance:** ~165 fps on dev desktop + laptop — comfortable headroom over the 60 fps target. Mobile / low-end not yet verified; quality-preset selection path not built.
 - **Atmosphere:** still dark / green-tinted; de-haze pass pending.
 
 ## Known issues
 
-- **Floor z-fighting:** floors flicker where two coplanar surfaces overlap — occurs both inside and outside. *Fix during hospital overhaul prompt*
+- **Floor z-fighting:** floors flicker where two coplanar surfaces overlap — occurs both inside and outside. *Being addressed in the hospital overhaul; not yet verified fixed in-browser.*
 
 ## Architecture invariants (do not break these)
 
