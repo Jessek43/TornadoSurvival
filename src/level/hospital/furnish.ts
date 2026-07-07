@@ -58,14 +58,17 @@ export function furnish(shell: HospitalShell): FurnishResult {
           // become doctor's offices.
           if (frontCenter) furnishEntranceHall(ctx, budget.entrance);
           else {
+            // Floor 0's non-concourse wings are ED treatment/resus bays (the
+            // layout's content), not generic offices — the Emergency half of
+            // "Entrance & Emergency".
             furnishRoomFloor(ctx, f, {
               facadeRooms: layout.facadeRooms,
               interiorRooms: layout.interiorRooms,
-              content: "office",
-              interiorContent: layout.interiorContent ?? "office",
+              content: layout.content,
+              interiorContent: layout.interiorContent ?? layout.content,
               extras: layout.extras,
               kitchen: false,
-              budget: budget.office,
+              budget: budget.ward,
             });
           }
         } else {

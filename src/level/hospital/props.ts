@@ -318,6 +318,116 @@ export function ambulance(x: number, floorY: number, z: number, facing: Facing):
   ];
 }
 
+// ===========================================================================
+// §3.4/§3.5 THEMED EQUIPMENT — signature machines that make each floor read as
+// its department (imaging / surgical / ICU / maternity / labs). Every one is
+// sized to sit inside the proven bed footprint (≤ ~0.9 across × ≤ ~2.2 deep,
+// wall-backed) so the room enterability flood-fill still clears, and every
+// sub-block is y-stacked or inset ≥ 5 cm so no two same-facing faces overlap.
+// ===========================================================================
+
+/** CT / X-ray scanner (imaging floor) — 4 blocks: a gantry housing with a dark
+ *  bore ring on its front, and a short patient table on a pedestal. Compact
+ *  (≤ ~1.5 m deep) so it fits inside any room and the archetype can set it back
+ *  off the facade, keeping the window band walkable. */
+export function ctScanner(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("propWhite", 0, floorY, 0.55, 1.0, 1.7, 1.0), // gantry housing (depth 0.05..1.05)
+    put("accentBlue", 0, floorY + 0.72, 1.08, 0.72, 0.72, 0.05), // bore ring, proud of the front
+    put("metal", 0, floorY, 1.55, 0.24, 0.52, 0.75), // table pedestal (1.175..1.925), clear of gantry
+    put("propWhite", 0, floorY + 0.52, 1.55, 0.5, 0.12, 0.9), // patient table (1.1..2.0) on the pedestal
+  ];
+}
+
+/** Operating table (surgical floor) — 2 blocks: a central pillar + a narrow
+ *  padded table top on its own plane. */
+export function operatingTable(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("metal", 0, floorY, 1.0, 0.42, 0.72, 0.5), // pillar
+    put("propWhite", 0, floorY + 0.72, 1.0, 0.6, 0.14, 1.85), // padded top
+  ];
+}
+
+/** Ceiling surgical-light cluster (surgical floor) — 2 blocks: a stem whose top
+ *  abuts the ceiling deck (its support) + a wide dish whose top abuts the stem
+ *  bottom (chained: dish → stem → deck → walls → ground). `ceilY` is the deck
+ *  underside above (= (f+1)·floorHeight − deckT). `block(mat, x, BOTTOM, z, …)`. */
+export function surgicalLight(x: number, ceilY: number, z: number): BlockDef[] {
+  const stemH = 0.4;
+  const dishH = 0.18;
+  return [
+    block("metal", x, ceilY - stemH, z, 0.14, stemH, 0.14), // stem: top at ceilY (touches deck)
+    block("propWhite", x, ceilY - stemH - dishH, z, 0.95, dishH, 0.95), // dish top abuts stem bottom
+  ];
+}
+
+/** Anaesthesia cart (surgical floor) — 2 blocks: a grey machine body + a gas
+ *  cylinder beside it (both floor-standing). */
+export function anaesthesiaCart(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("metal", 0, floorY, 0.4, 0.55, 1.2, 0.6),
+    put("accentTeal", 0, floorY, 0.95, 0.2, 1.0, 0.22), // gas cylinder
+  ];
+}
+
+/** Ventilator / dialysis tower (ICU floor) — 2 blocks: a tower + a dark screen
+ *  proud of its front face. */
+export function ventilator(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("metal", 0, floorY, 0.35, 0.5, 1.4, 0.55),
+    put("accentBlue", 0, floorY + 0.95, 0.64, 0.42, 0.32, 0.05), // screen
+  ];
+}
+
+/** Crash cart (ICU / ED floor) — 3 blocks: a red multi-drawer trolley, a defib
+ *  box on top, and its screen (each on its own plane). */
+export function crashCart(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("signRed", 0, floorY, 0.35, 0.55, 0.95, 0.55),
+    put("metal", 0, floorY + 0.95, 0.35, 0.5, 0.18, 0.46), // defib body
+    put("accentBlue", 0, floorY + 1.13, 0.35, 0.3, 0.12, 0.3), // defib screen
+  ];
+}
+
+/** Incubator (maternity floor) — 3 blocks: a stand, a translucent hood, and the
+ *  mattress inside it. */
+export function incubator(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("metal", 0, floorY, 0.5, 0.72, 0.78, 1.0), // stand
+    put("propWhite", 0, floorY + 0.78, 0.5, 0.7, 0.1, 0.9), // mattress on the stand top
+    put("accentBlue", 0, floorY + 0.9, 0.5, 0.82, 0.5, 1.02), // clear hood over it
+  ];
+}
+
+/** Specimen / blood fridge (labs floor) — 2 blocks: a body + a glazed front
+ *  panel (accentBlue, NOT glass — glass is perimeter-only). */
+export function specimenFridge(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("metal", 0, floorY, 0.35, 0.82, 1.9, 0.62),
+    put("accentBlue", 0, floorY + 0.3, 0.67, 0.64, 1.4, 0.05), // glazed door, proud of the body
+  ];
+}
+
+/** Small wall-abutting box (sharps bin / sanitiser / extinguisher) — 1 block,
+ *  no floor footprint, so it never affects room walkability. */
+export function wallBox(
+  x: number,
+  bottomY: number,
+  z: number,
+  facing: Facing,
+  mat: MaterialId,
+  size = 0.24,
+): BlockDef[] {
+  return [frame(x, z, facing)(mat, 0, bottomY, size / 2 + 0.02, size, size, size)];
+}
+
 /** Rooftop cross — 3 signRed blocks: post standing on the roof deck + two
  *  arms ABUTTING the post's sides (never an overlapping plus — intersecting
  *  same-size bars would put coplanar same-facing faces with real area). */

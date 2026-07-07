@@ -16,7 +16,17 @@
  * Distinctness of `id` and the single-kitchen rule are asserted by verify.ts.
  */
 
-export type RoomContent = "patient" | "office" | "kitchen" | "lab" | "records";
+export type RoomContent =
+  | "patient"
+  | "office"
+  | "kitchen"
+  | "lab"
+  | "records"
+  // §3.4 floor-theme room types — the signature department equipment.
+  | "imaging" // X-ray / CT scanner rooms (floor 1)
+  | "surgical" // operating theatres (floor 2)
+  | "icu" // critical-care bays: bed + ventilator + crash cart (floor 4)
+  | "maternity"; // delivery / nursery: bed + incubator (floor 5)
 
 export interface FloorLayout {
   /** Distinct human id per floor (verify asserts distinctness + prints them). */
@@ -69,64 +79,80 @@ export function floorSignature(l: FloorLayout): string {
 // per-floor "unique room" (records archive, path lab, ward office, the kitchen).
 export const FLOOR_LAYOUTS: readonly FloorLayout[] = [
   {
-    id: "L0-entrance-concourse",
+    // §3.4 f0 — Entrance & Emergency: open concourse (front-center wings) plus
+    // ED treatment bays with a crash cart; a records/pharmacy room off the lobby.
+    id: "L0-entrance-emergency",
     archetype: "entrance",
     facadeRooms: 1,
     interiorRooms: 1,
-    content: "office",
-    interiorContent: "records", // records archive off the lobby
-    extras: false,
-  },
-  {
-    id: "L1-triage-ward",
-    archetype: "ward",
-    facadeRooms: 2,
-    interiorRooms: 1,
-    content: "patient",
-    interiorContent: "lab", // pathology lab across the corridor
+    content: "patient", // ED resus/treatment bays in the non-concourse wings
+    interiorContent: "records", // records / pharmacy store off the lobby
     extras: true,
   },
   {
-    id: "L2-diagnostics-offices",
+    // §3.4 f1 — Outpatient & Imaging: X-ray / CT scanner rooms, a radiology
+    // reading office across the corridor.
+    id: "L1-outpatient-imaging",
     archetype: "ward",
     facadeRooms: 2,
     interiorRooms: 1,
-    content: "office", // a doctors'/diagnostics floor — desks, not beds
-    interiorContent: "records",
+    content: "imaging",
+    interiorContent: "office", // radiology reading room
     extras: false,
   },
   {
-    id: "L3-service-ward",
+    // §3.4 f2 — Surgical: operating theatres (table + ceiling light + anaesthesia
+    // cart), a scrub/sterile office across the corridor.
+    id: "L2-surgical-theatres",
+    archetype: "ward",
+    facadeRooms: 2,
+    interiorRooms: 1,
+    content: "surgical",
+    interiorContent: "office", // scrub / sterile supply
+    extras: true,
+  },
+  {
+    // §3.4 f3 — Inpatient Wards: patient beds + the building's single (staff)
+    // kitchen on the west front wing.
+    id: "L3-inpatient-wards",
     archetype: "ward",
     facadeRooms: 2,
     interiorRooms: 1,
     content: "patient",
+    interiorContent: "office", // ward office / nurse admin
     extras: false,
     kitchenWing: [0, 2], // the one kitchen: west front wing, this floor
   },
   {
-    id: "L4-recovery-ward",
+    // §3.4 f4 — ICU / Critical Care: bed + ventilator + crash cart bays, dense
+    // facade, no blind rooms (an open critical-care floor).
+    id: "L4-intensive-care",
     archetype: "ward",
     facadeRooms: 2,
-    interiorRooms: 0, // dense facade, no blind rooms — an open recovery floor
-    content: "patient",
+    interiorRooms: 0,
+    content: "icu",
     extras: true,
   },
   {
-    id: "L5-quiet-ward",
+    // §3.4 f5 — Maternity & Paediatrics: delivery rooms + nursery incubators, a
+    // single ward office.
+    id: "L5-maternity-paediatrics",
     archetype: "ward",
     facadeRooms: 1,
     interiorRooms: 1,
-    content: "patient",
-    interiorContent: "office", // a single ward office
+    content: "maternity",
+    interiorContent: "office",
     extras: false,
   },
   {
-    id: "L6-isolation-ward",
+    // §3.4 f6 — Labs & Admin: pathology lab benches + specimen fridges, a records
+    // archive across the corridor (the sparsest, most claustrophobic floor).
+    id: "L6-labs-admin",
     archetype: "ward",
     facadeRooms: 1,
-    interiorRooms: 0, // the sparsest, most claustrophobic floor
-    content: "patient",
+    interiorRooms: 1,
+    content: "lab",
+    interiorContent: "records",
     extras: false,
   },
 ];

@@ -167,6 +167,9 @@ export function furnishRoomFloor(ctx: WingCtx, f: number, cfg: RoomFloorCfg): vo
   const top = wallTopY(f);
   const h = top - base;
   const fy = f * P.floorHeight + P.floorHeight - P.ceilGap;
+  // Underside of the deck ABOVE this floor — where a ceiling-hung prop (the
+  // surgical light) anchors so it's support-chained, not floating.
+  const ceilY = (f + 1) * P.floorHeight - P.deckT;
   // `inward` points from the wing's envelope facade into the building.
   const inward = gz === 0 ? 1 : -1;
   const facadeZ = inward === 1 ? Z_EDGES[gz] : Z_EDGES[gz + 1];
@@ -208,6 +211,7 @@ export function furnishRoomFloor(ctx: WingCtx, f: number, cfg: RoomFloorCfg): vo
     const bedLow = room.sepLo;
     const bedX = bedLow ? xIn0 : xIn1;
     const bedFacing: props.Facing = bedLow ? "+x" : "-x";
+    const faceSign = bedLow ? 1 : -1; // +x sign of bedFacing (depth into the room)
     const doorSideX = bedLow ? xIn1 : xIn0;
 
     // Corridor wall with a 1.4 m clear doorway on the door side.
@@ -283,16 +287,49 @@ export function furnishRoomFloor(ctx: WingCtx, f: number, cfg: RoomFloorCfg): vo
       if (room.wide) {
         blocks.push(...props.kitchenTable(bedX + (bedLow ? 1.55 : -1.55), base, bedZ, bedFacing));
       }
+    } else if (content === "imaging") {
+      // Imaging room (floor 1): a CT/X-ray scanner set back off the facade along
+      // the separator wall (so the window band stays walkable) with a wall-
+      // mounted viewer lightbox. `scanZ` = mid-room, clear of both the window
+      // and (facade rooms only) the door side.
+      const scanZ = kind === "facade" ? bedZ + inward * 1.3 : bedZ;
+      blocks.push(...props.ctScanner(bedX, base, scanZ, bedFacing));
+      blocks.push(
+        ...props.wallPanel(bedX, base + 1.35, scanZ + inward * 0.9, bedFacing, "accentBlue", 0.6, 0.5),
+      );
+    } else if (content === "surgical") {
+      // Operating theatre (floor 2): a table under a ceiling surgical light, an
+      // anaesthesia cart set back along the separator wall.
+      blocks.push(...props.operatingTable(bedX, base, bedZ, bedFacing));
+      blocks.push(...props.surgicalLight(bedX + faceSign * 1.0, ceilY, bedZ));
+      blocks.push(...props.anaesthesiaCart(bedX, base, bedZ + inward * 1.9, bedFacing));
+    } else if (content === "icu") {
+      // ICU bay (floor 4): a bed with a ventilator at its side and a wall vitals
+      // monitor — the critical-care read without breaking walkability.
+      blocks.push(...props.bed(bedX, base, bedZ, bedFacing));
+      blocks.push(...props.bedheadPanel(bedX, base, bedZ, bedFacing));
+      blocks.push(...props.ventilator(bedX, base, bedZ + inward * 1.9, bedFacing));
+      blocks.push(
+        ...props.wallPanel(bedX, base + 1.3, bedZ + inward * 0.95, bedFacing, "accentBlue", 0.44, 0.34),
+      );
+    } else if (content === "maternity") {
+      // Nursery / delivery room (floor 5): an incubator with a bassinet cabinet
+      // and a wall baby-monitor.
+      blocks.push(...props.incubator(bedX, base, bedZ, bedFacing));
+      blocks.push(...props.bedsideCabinet(bedX, base, bedZ + inward * 1.7, bedFacing));
+      blocks.push(
+        ...props.wallPanel(bedX, base + 1.4, bedZ + inward * 0.9, bedFacing, "accentTeal", 0.4, 0.3),
+      );
     } else if (content === "lab") {
-      // Pathology lab (a floor-unique blind room): a bench run + a wall-flat
-      // vitals/analysis monitor above it + a stool — all on the separator wall,
-      // footprint ≤ the office desk's, so walkability holds (5 blocks, same as
-      // the patient cluster it replaces, so the floor budget is unchanged).
+      // Pathology lab: a bench run with an analysis monitor above it, a stool,
+      // and a specimen/blood fridge set back along the separator wall — all
+      // wall-hugging, so walkability holds.
       blocks.push(...props.counter(bedX, base, bedZ, bedFacing, 1.4));
       blocks.push(
         ...props.wallPanel(bedX, base + 1.15, bedZ, bedFacing, "accentBlue", 0.42, 0.34),
       );
       blocks.push(...props.chair(bedX + (bedLow ? 1.65 : -1.65), base, bedZ, facingSep, "metal"));
+      blocks.push(...props.specimenFridge(bedX, base, bedZ + inward * 1.9, bedFacing));
     } else {
       // Records archive (a floor-unique blind room): a run of filing cabinets
       // along the separator wall + a wall chart — all wall-hugging, so the room
@@ -303,6 +340,23 @@ export function furnishRoomFloor(ctx: WingCtx, f: number, cfg: RoomFloorCfg): vo
         ...props.wallPanel(bedX, base + 1.4, bedZ + intoRoom * 0.75, bedFacing, "propWhite", 0.7, 0.5),
       );
     }
+
+    // §3.5 clinical wall details — a hand-sanitiser dispenser by every room and,
+    // in clinical rooms, a sharps bin. Both wall-flat on the separator wall's
+    // corridor end (the equipment anchors at the facade end), so they add
+    // density without touching the room's walkable core.
+    const detailZ = kind === "facade" ? zFar - inward * 0.4 : zNear + inward * 0.4;
+    blocks.push(...props.wallBox(bedX, base + 1.05, detailZ, bedFacing, "propWhite", 0.22));
+    const clinical =
+      content === "patient" ||
+      content === "icu" ||
+      content === "surgical" ||
+      content === "imaging" ||
+      content === "maternity";
+    if (clinical) {
+      blocks.push(...props.wallBox(bedX, base + 0.85, detailZ - inward * 0.5, bedFacing, "accentOrange", 0.26));
+    }
+
     addFixture([(xIn0 + xIn1) / 2, fy, (zNear + zFar) / 2]);
 
     ctx.rooms.push({
