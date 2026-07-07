@@ -8,7 +8,7 @@ import {
   type Fixture,
   type RoomSpec,
 } from "./params";
-import { FLOOR_LAYOUTS } from "./layouts";
+import { FLOOR_LAYOUTS, floorSignature } from "./layouts";
 
 /**
  * Build-time invariants for the hospital definition — pure geometry checks
@@ -398,6 +398,17 @@ function checkFloorLayouts(rooms: RoomSpec[]): { bad: string[]; info: string[] }
   const ids = FLOOR_LAYOUTS.map((l) => l.id);
   const dupes = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
   if (dupes.length) bad.push(`duplicate floor-layout id(s): ${dupes.join(", ")}`);
+
+  // Structural distinctness — the machine-checkable "every floor unique": no two
+  // floors may share the same signature (archetype/room counts/content/extras/
+  // kitchen), so distinct ids can't paper over two identically-built floors (the
+  // old f1≡f2 that read the same despite different names).
+  const sigs = FLOOR_LAYOUTS.map(floorSignature);
+  const sigDupes = [...new Set(sigs.filter((s, i) => sigs.indexOf(s) !== i))];
+  if (sigDupes.length) {
+    bad.push(`floors share a structural signature (identical layout): ${sigDupes.join(" | ")}`);
+  }
+  info.push("floor signatures: " + sigs.map((s, f) => `f${f}=${s}`).join("  "));
 
   const kitchenConfigs = FLOOR_LAYOUTS.filter((l) => l.kitchenWing).length;
   const kitchenRooms = rooms.filter((r) => r.content === "kitchen").length;

@@ -142,7 +142,8 @@ function boundaryInset(gx: number, f: number, side: -1 | 1): number {
 export interface RoomFloorCfg {
   facadeRooms: number; // windowed rooms per wing
   interiorRooms: number; // blind rooms across the corridor per wing
-  content: RoomContent; // what facade (and non-kitchen interior) rooms are
+  content: RoomContent; // what facade (and non-kitchen) rooms are
+  interiorContent: RoomContent; // what the BLIND interior rooms are (per-floor unique room)
   extras: boolean; // IV + monitor + chair in wide rooms
   kitchen: boolean; // this wing+floor hosts the building's single kitchen
   budget: number; // block budget for this floor (per wing)
@@ -273,7 +274,7 @@ export function furnishRoomFloor(ctx: WingCtx, f: number, cfg: RoomFloorCfg): vo
       blocks.push(...props.officeDesk(bedX, base, bedZ, bedFacing));
       blocks.push(...props.chair(bedX + (bedLow ? 2.05 : -2.05), base, bedZ, facingSep));
       blocks.push(...props.cabinet(bedX, base, bedZ + intoRoom * 1.5, bedFacing));
-    } else {
+    } else if (content === "kitchen") {
       // Kitchen (a facade room; a kitchen may have a window). Counter + fridge
       // along the separator wall, well spaced; a table off the counter foot in
       // wide rooms — all wall-hugging so the room stays walkable.
@@ -282,6 +283,25 @@ export function furnishRoomFloor(ctx: WingCtx, f: number, cfg: RoomFloorCfg): vo
       if (room.wide) {
         blocks.push(...props.kitchenTable(bedX + (bedLow ? 1.55 : -1.55), base, bedZ, bedFacing));
       }
+    } else if (content === "lab") {
+      // Pathology lab (a floor-unique blind room): a bench run + a wall-flat
+      // vitals/analysis monitor above it + a stool — all on the separator wall,
+      // footprint ≤ the office desk's, so walkability holds (5 blocks, same as
+      // the patient cluster it replaces, so the floor budget is unchanged).
+      blocks.push(...props.counter(bedX, base, bedZ, bedFacing, 1.4));
+      blocks.push(
+        ...props.wallPanel(bedX, base + 1.15, bedZ, bedFacing, "accentBlue", 0.42, 0.34),
+      );
+      blocks.push(...props.chair(bedX + (bedLow ? 1.65 : -1.65), base, bedZ, facingSep, "metal"));
+    } else {
+      // Records archive (a floor-unique blind room): a run of filing cabinets
+      // along the separator wall + a wall chart — all wall-hugging, so the room
+      // stays as walkable as an office.
+      blocks.push(...props.cabinet(bedX, base, bedZ, bedFacing));
+      blocks.push(...props.cabinet(bedX, base, bedZ + intoRoom * 1.5, bedFacing));
+      blocks.push(
+        ...props.wallPanel(bedX, base + 1.4, bedZ + intoRoom * 0.75, bedFacing, "propWhite", 0.7, 0.5),
+      );
     }
     addFixture([(xIn0 + xIn1) / 2, fy, (zNear + zFar) / 2]);
 
@@ -314,7 +334,9 @@ export function furnishRoomFloor(ctx: WingCtx, f: number, cfg: RoomFloorCfg): vo
     if (content !== "kitchen") mainRoom = mainRoom ?? placed;
   }
   for (const room of intervals.slice(0, cfg.interiorRooms)) {
-    addRoom(room, "interior", cfg.content);
+    // The blind interior room is the floor's UNIQUE room type (lab / records /
+    // ward office / kitchen), so every floor has a room the others don't.
+    addRoom(room, "interior", cfg.interiorContent);
   }
 
   // CORRIDOR DRESSING — orange handrail bumpers + wall chart on the main
@@ -405,6 +427,16 @@ export function furnishEntranceHall(ctx: WingCtx, budget: number): void {
   blocks.push(...props.plant(cx + sign * 2.6, base, -2.2));
   blocks.push(block("metal", cx - sign * 2.6, base, -1.7, 0.12, 2.0, 0.12));
   blocks.push(block("signRed", cx - sign * 2.6, base + 2.0, -1.7, 1.3, 0.5, 0.14));
+
+  // A row of parked medical equipment along the back of the concourse (the
+  // wishlist gurney / wheelchair / cart + a vending machine). Spaced 2 m apart
+  // and clear of the rib corridors, so they never share a face plane or block
+  // circulation. Facing the doors (+z).
+  const backZ = -13.5;
+  blocks.push(...props.vendingMachine(cx - 3, base, backZ, "+z"));
+  blocks.push(...props.gurney(cx - 1, base, backZ, "+z"));
+  blocks.push(...props.wheelchair(cx + 1, base, backZ, "+z"));
+  blocks.push(...props.supplyCart(cx + 3, base, backZ, "+z"));
 
   const used = blocks.length - before;
   if (used > budget) {

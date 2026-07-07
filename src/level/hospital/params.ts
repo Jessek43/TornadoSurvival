@@ -1,3 +1,5 @@
+import type { RoomContent } from "./layouts";
+
 /**
  * The hospital's SIZE DIAL and derived spatial grid — the single source of
  * spatial truth for the whole building. Every generator in shell.ts (and the
@@ -220,8 +222,9 @@ export interface RoomSpec {
   /** z of the facade wall's inner face (windowed side) — facade rooms only. */
   windowZ?: number;
   kind: "facade" | "interior";
-  /** What the room is furnished as (drives the §4 kitchen/room-count asserts). */
-  content: "patient" | "office" | "kitchen";
+  /** What the room is furnished as (drives the §4 kitchen/room-count asserts).
+   *  Includes the floor-unique interior types (lab / records). */
+  content: RoomContent;
   /** Storey the room sits on (for the per-floor room-count report). */
   floor: number;
   name: string;

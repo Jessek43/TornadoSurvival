@@ -194,6 +194,26 @@ export function wheelchair(x: number, floorY: number, z: number, facing: Facing)
   ];
 }
 
+/** Vending machine — 2 blocks: a tall metal body + a lit glass-front panel
+ *  standing proud of the front face (its own plane, so no coplanar clash). */
+export function vendingMachine(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("metal", 0, floorY, 0.35, 0.9, 1.9, 0.7),
+    put("accentBlue", 0, floorY + 0.35, 0.705, 0.7, 1.2, 0.05), // glass front (proud of the body)
+  ];
+}
+
+/** Supply / linen trolley — 2 blocks: a metal cabinet + a white tray top that
+ *  overhangs it on both axes (own plane, no shared side face). */
+export function supplyCart(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("metal", 0, floorY, 0.3, 0.6, 0.85, 0.5),
+    put("propWhite", 0, floorY + 0.85, 0.3, 0.68, 0.08, 0.58),
+  ];
+}
+
 /** Linked waiting bench — 3 blocks: leg beam, seat slab, backrest. */
 export function benchRow(
   x: number,
