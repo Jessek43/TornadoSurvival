@@ -224,14 +224,22 @@ export class TornadoSystem {
     this.travelLen = cfg.passRadius * 2;
     this.funnels.length = 0;
 
+    // First funnel spawns anywhere on the circle; each additional funnel is
+    // forced onto a DIFFERENT arc (≥120° away, wrapping) so a double never
+    // spawns two cores on top of each other — they always approach from
+    // distinct sides and cross the map on visibly separate routes (§2a).
+    const baseAngle = Math.random() * Math.PI * 2;
     for (let k = 0; k < this.funnelCount; k++) {
       const f = this.pool[k];
       // Independent noise channel per funnel AND per pass (so the same funnel
       // doesn't repeat its meander pass to pass).
       f.seed = this.passIndex * 13 + k * 101 + 7;
 
-      // Spawn somewhere on a circle around the hospital.
-      const spawnAngle = Math.random() * Math.PI * 2;
+      // Spawn on the circle: funnel 0 anywhere, later funnels ≥120° offset.
+      const spawnAngle =
+        k === 0
+          ? baseAngle
+          : baseAngle + ((2 * Math.PI) / 3) * k + Math.random() * ((2 * Math.PI) / 3);
       f.spawnPos.set(
         c.x + Math.cos(spawnAngle) * cfg.passRadius,
         c.z + Math.sin(spawnAngle) * cfg.passRadius,
