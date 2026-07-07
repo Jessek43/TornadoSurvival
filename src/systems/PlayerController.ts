@@ -116,7 +116,13 @@ export class PlayerController {
     // how far you can move" after resolving collisions.
     this.controller = physics.world.createCharacterController(0.02); // 2 cm skin
     this.controller.enableAutostep(0.5, 0.2, true); // walk up ≤ 0.5 m ledges
-    this.controller.enableSnapToGround(0.3); // hug the ground going down slopes
+    // Snap-to-ground must be ≥ the tallest step the player WALKS down, or the
+    // controller can't track a staircase (it floats off the tread edge instead
+    // of hugging the next tread). At 0.3 it was BELOW the house stair rise
+    // (0.4 m) — the "can't traverse the house stairs" root cause. Raised to
+    // 0.45: ≥ every walkable step (house stairs now 0.35, hospital 0.30) yet
+    // still under the 0.5 autostep, so it never masks a real fall (§1).
+    this.controller.enableSnapToGround(0.45);
     this.controller.setApplyImpulsesToDynamicBodies(true); // shove loose debris
 
     // First-person body mesh stays hidden (the camera sits inside it).
@@ -141,6 +147,18 @@ export class PlayerController {
       `[falldamage] before (shared w/ ragdoll): safe ${p.safeImpactSpeed} m/s, ` +
         `factor ${p.impactDamageFactor} hp per m/s · now (dedicated on-foot): ` +
         `safe ${p.fallSafeSpeed} m/s, factor ${p.fallDamageFactor} hp per m/s`,
+    );
+    // §1 traversal readout: the numbers behind the doorstep/stair fix. Autostep
+    // (0.5) already cleared both the 0.18 m porch doorstep and the house stair,
+    // so the fix was NOT raising it — it was snap-to-ground 0.3→0.45 (now ≥ the
+    // house stair rise) plus dropping that rise 0.40→0.35 for autostep margin.
+    // House stairwell ceiling (2.56 m under the 2.8 m storey's floor slab) vs
+    // the 1.8 m capsule → 0.76 m standing headroom; the gentler rise widens the
+    // tightest stair-transition clearance too.
+    console.info(
+      `[traversal] autostep maxStep 0.50 m, snapToGround 0.30→0.45 m, capsule ${p.height} m · ` +
+        `doorstep 0.18 m & house stair rise 0.40→0.35 m (both < autostep) · ` +
+        `house stairwell ceiling 2.56 m vs capsule ${p.height} m`,
     );
   }
 

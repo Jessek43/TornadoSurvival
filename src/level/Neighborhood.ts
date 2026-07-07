@@ -95,8 +95,14 @@ const T = 0.22; // wall thickness
 //     the player climbs cleanly through — never a floating slab or a ceiling
 //     bonk. All in the house's local (across, depth) frame, so it lands right
 //     for every facing. ---
-const STAIR_RISE = 0.4; // < 0.5 m autostep
-const STAIR_STEPS = Math.round(STORY_H / STAIR_RISE); // 7 → exactly one storey
+// Rise 0.35: the old 0.40 left only 0.10 m of autostep headroom (vs 0.5) and
+// sat ABOVE the snap-to-ground distance, so the controller couldn't reliably
+// track the flight (the "can't climb the house stairs" bug). 0.35 matches the
+// margin the proven hospital stairs (0.30) get, and gentler steps ease the head
+// clearance at the top of the flight — while still tiling the 2.8 m storey
+// exactly (8 × 0.35). (§1)
+const STAIR_RISE = 0.35; // < 0.5 m autostep, ≤ 0.45 m snap-to-ground
+const STAIR_STEPS = Math.round(STORY_H / STAIR_RISE); // 8 → exactly one storey
 const STAIR_RUN = 0.78; // > 0.7 m capsule diameter
 const TREAD_T = STAIR_RISE + 0.12; // overlaps the step below (no gap)
 const STAIR_W = 1.1; // tread width (across)
