@@ -385,6 +385,69 @@ function findCorridorIntrusions(sections: SectionSpec[], shellCounts: number[]):
 }
 
 /**
+ * §3.0 STAIR-TOP GAP assert — at every arrival floor the switchback's landing
+ * (+ its open-side gap-fill slab) must meet the wing deck with NO horizontal
+ * gap on the walk-out side, or the player sees a seam and can fall through it.
+ * For each shaft + interior floor plane we measure how far the stair's landing
+ * reaches on the open side vs where the wing deck's inner edge starts there, at
+ * several z across the landing, and take the worst gap. Asserts it is 0.
+ */
+function findStairTopGaps(boxes: Box[]): { bad: string[]; info: string[] } {
+  const bad: string[] = [];
+  const yTol = 0.05; // "top is on this floor plane"
+  const eps = 0.06; // a seam wider than this is a visible gap / fall-through
+  let maxGap = 0;
+  const hd = P.stairs.hd;
+  const zFront = P.spineZ + hd;
+  const runFront = zFront - P.stairs.landingDepth;
+  const floorZ1 = zFront - P.wallT;
+  // Sample z across the landing's walk-out band (avoid the very edges).
+  const zSamples = [0.25, 0.5, 0.75].map((t) => runFront + (floorZ1 - runFront) * t);
+
+  for (const cx of P.stairs.xs) {
+    const openSign = cx < 0 ? 1 : -1; // walls are on the far side; centre is open
+    const voidEdge = cx + openSign * P.stairs.hw;
+    for (let n = 1; n < FLOORS_MAX; n++) {
+      const y = n * P.floorHeight; // arrival floor plane
+      for (const zc of zSamples) {
+        const onPlane = (b: Box): boolean =>
+          Math.abs(b.max[1] - y) <= yTol && zc > b.min[2] + 1e-4 && zc < b.max[2] - 1e-4;
+        // How far the stair landing/fill reaches toward the open side.
+        let landReach = openSign > 0 ? -Infinity : Infinity;
+        for (const b of boxes) {
+          if (!b.section.startsWith("stair_") || !onPlane(b)) continue;
+          landReach = openSign > 0 ? Math.max(landReach, b.max[0]) : Math.min(landReach, b.min[0]);
+        }
+        if (!isFinite(landReach)) continue; // no landing at this z (not a walk-out point)
+        // The nearest wing-deck inner edge on the open side, past the void edge.
+        let deckReach = openSign > 0 ? Infinity : -Infinity;
+        for (const b of boxes) {
+          if (b.section.startsWith("stair_") || !onPlane(b)) continue;
+          if (openSign > 0 && b.max[0] > voidEdge + 0.01) {
+            deckReach = Math.min(deckReach, Math.max(b.min[0], voidEdge));
+          } else if (openSign < 0 && b.min[0] < voidEdge - 0.01) {
+            deckReach = Math.max(deckReach, Math.min(b.max[0], voidEdge));
+          }
+        }
+        if (!isFinite(deckReach)) {
+          bad.push(`stair@${cx} floor ${n}: no wing deck to step onto at z=${zc.toFixed(1)}`);
+          continue;
+        }
+        const gap = Math.max(0, openSign > 0 ? deckReach - landReach : landReach - deckReach);
+        if (gap > maxGap) maxGap = gap;
+        if (gap > eps) {
+          bad.push(
+            `stair@${cx} floor ${n}: ${gap.toFixed(2)} m gap between landing edge ` +
+              `${landReach.toFixed(2)} and deck ${deckReach.toFixed(2)} (z=${zc.toFixed(1)})`,
+          );
+        }
+      }
+    }
+  }
+  return { bad, info: [`stair-top seam: max gap ${maxGap.toFixed(3)} m (want 0)`] };
+}
+
+/**
  * §4 detailing invariants over the authored FLOOR_LAYOUTS + placed rooms:
  * distinct per-floor layout ids, EXACTLY ONE kitchen in the whole building
  * (declared in the table AND actually placed), and a per-floor room-count
@@ -446,6 +509,9 @@ export function verifyHospital(
   };
 
   push("coplanar same-facing overlaps", findCoplanarOverlaps(boxes));
+  const stairGaps = findStairTopGaps(boxes);
+  push("stair-top gaps", stairGaps.bad);
+  info.push(...stairGaps.info);
   push("interior glass blocks", findInteriorGlass(boxes, exteriorFaces));
   push("fixtures without enclosure", findOrphanFixtures(boxes, fixtures));
   push("unsupported-at-birth blocks", findUnsupported(sections));
