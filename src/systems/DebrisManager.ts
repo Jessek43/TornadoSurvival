@@ -174,6 +174,17 @@ export class DebrisManager {
     slot.hasSplit = hasSplit;
     this.activeCount++;
 
+    // §2a INVARIANT: the debris budget is ONE global pool, evicted before every
+    // claim above, so total active debris stays ≤ the cap no matter how many
+    // funnels feed it (two funnels don't get two budgets). Guard it loudly in
+    // dev so a future per-funnel spawn path can never quietly blow the cap.
+    if (
+      this.activeCount > this.budget &&
+      (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV
+    ) {
+      console.error(`[debris] active ${this.activeCount} exceeded global cap ${this.budget}`);
+    }
+
     // Same deterministic brightness jitter as intact structure blocks, so a
     // block doesn't visibly change shade the moment it breaks free.
     const jitter = 0.88 + 0.24 * (((instanceId * 2654435761) >>> 0) % 1000) / 1000;

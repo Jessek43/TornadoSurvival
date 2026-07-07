@@ -117,9 +117,9 @@ export class AudioSystem {
 
     // Proximity 0..1: how much tornado the player's ears should get. Felt from
     // further out (÷300) so an approaching pass is heard before it's seen.
-    const dist = this.tornado.position.distanceTo(this.playerPos);
-    const proximity =
-      this.tornado.intensity * THREE.MathUtils.clamp(1 - dist / 300, 0, 1);
+    // NEAREST funnel drives it (§2a), so a second funnel raises the dread on
+    // its own.
+    const proximity = this.tornado.feltIntensity(this.playerPos.x, this.playerPos.z, 300);
     this.proximity = proximity;
 
     // Rumble is THE approaching-swell voice: louder and swelling earlier than
@@ -140,9 +140,7 @@ export class AudioSystem {
 
   /** Structures creaking: sparse, closer together as danger rises. */
   private scheduleGroans(dt: number): void {
-    const dist = this.tornado.position.distanceTo(this.player.position);
-    const danger =
-      this.tornado.intensity * THREE.MathUtils.clamp(1 - dist / 130, 0, 1);
+    const danger = this.tornado.feltIntensity(this.player.position.x, this.player.position.z, 130);
     if (danger < 0.1) return;
 
     this.groanTimer -= dt;

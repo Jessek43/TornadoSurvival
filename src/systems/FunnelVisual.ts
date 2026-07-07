@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GameConfig } from "../config/GameConfig";
 import type { QualitySettings } from "../config/QualitySettings";
-import type { TornadoSystem } from "./TornadoSystem";
+import type { Funnel, TornadoSystem } from "./TornadoSystem";
 
 /**
  * The tornado's look — deliberately fake and cheap:
@@ -14,8 +14,42 @@ import type { TornadoSystem } from "./TornadoSystem";
  *    integrating the real wind field — integration looks similar but can
  *    spiral out of the visual envelope; scripted stays art-directable.
  * No volumetrics — the fear budget is spent on audio and lighting.
+ *
+ * §2a MULTI-FUNNEL: one `FunnelColumn` per possible funnel (maxFunnels),
+ * built up-front and shown/hidden + positioned each frame from
+ * `tornado.funnels[i]`. The dust pools are sized so their TOTAL stays well
+ * under the particle cap.
  */
 export class FunnelVisual {
+  private readonly columns: FunnelColumn[] = [];
+
+  constructor(
+    scene: THREE.Scene,
+    private readonly tornado: TornadoSystem,
+    quality: QualitySettings,
+  ) {
+    // Split the particle budget across the funnel pools so two funnels never
+    // exceed the cap (each pool is small; 2 × ~180 ≪ particleCap).
+    const perFunnel = Math.min(
+      Math.floor((quality.particleCap * 0.15) / GameConfig.tornado.maxFunnels),
+      180,
+    );
+    for (let i = 0; i < GameConfig.tornado.maxFunnels; i++) {
+      this.columns.push(new FunnelColumn(scene, perFunnel));
+    }
+  }
+
+  update(dt: number): void {
+    const funnels = this.tornado.funnels;
+    for (let i = 0; i < this.columns.length; i++) {
+      this.columns[i].update(dt, funnels[i]);
+    }
+  }
+}
+
+/** One funnel's column mesh + dust pool. Hidden when its funnel slot is empty
+ *  or fully calm. */
+class FunnelColumn {
   private readonly group = new THREE.Group();
   private readonly column: THREE.Mesh;
   private readonly columnMat: THREE.ShaderMaterial;
@@ -33,11 +67,7 @@ export class FunnelVisual {
 
   private time = 0;
 
-  constructor(
-    scene: THREE.Scene,
-    private readonly tornado: TornadoSystem,
-    quality: QualitySettings,
-  ) {
+  constructor(scene: THREE.Scene, count: number) {
     const cfg = GameConfig.tornado;
 
     // --- the column ---
@@ -67,12 +97,10 @@ export class FunnelVisual {
     this.group.add(this.column);
 
     // --- dust pool ---
-    // Heavily reduced (was particleCap·0.8): the orbiting sprites were the
-    // tell that leaked the funnel's bearing to sheltering players — tall
-    // column-riding particles rose above the building and showed through door
-    // gaps / stair voids / glass. Keep only a sparse, mostly-low skirt; the
-    // darkened column mesh now carries the funnel's look. (Bug 6.)
-    this.count = Math.min(Math.floor(quality.particleCap * 0.15), 220);
+    // Kept sparse and low (Bug 6): tall column-riding particles leaked the
+    // funnel's bearing to sheltering players through door gaps / stair voids /
+    // glass. The darkened column mesh carries the funnel's look.
+    this.count = count;
     this.positions = new Float32Array(this.count * 3);
     this.angle = new Float32Array(this.count);
     this.radius = new Float32Array(this.count);
@@ -119,22 +147,23 @@ export class FunnelVisual {
     this.height[i] = randomHeight ? Math.random() * this.maxY[i] : Math.random() * 0.8;
   }
 
-  update(dt: number): void {
-    const t = this.tornado;
-    this.group.visible = t.intensity > 0.01;
-    if (!this.group.visible) return;
+  /** Drive this column from its funnel slot (or hide it if the slot is empty). */
+  update(dt: number, funnel: Funnel | undefined): void {
+    const intensity = funnel?.intensity ?? 0;
+    this.group.visible = intensity > 0.01;
+    if (!this.group.visible || !funnel) return;
 
     const cfg = GameConfig.tornado;
     this.time += dt;
 
-    this.group.position.set(t.position.x, 0, t.position.z);
+    this.group.position.set(funnel.position.x, 0, funnel.position.z);
     // Spin the whole tube — combined with the shader's vertical scroll this
     // sells rotation without a seamless texture.
     this.column.rotation.y -= dt * 2.2;
-    const squeeze = 0.35 + 0.65 * t.intensity; // thin while ramping up
+    const squeeze = 0.35 + 0.65 * intensity; // thin while ramping up
     this.column.scale.set(squeeze, 1, squeeze);
     this.columnMat.uniforms.uTime.value = this.time;
-    this.columnMat.uniforms.uIntensity.value = t.intensity;
+    this.columnMat.uniforms.uIntensity.value = intensity;
 
     // Scripted dust orbit: angular speed falls off with radius like the
     // real swirl does, so inner dust visibly outruns outer dust.
@@ -142,10 +171,10 @@ export class FunnelVisual {
       const r = this.radius[i];
       // Faster inner spin (÷max(r,2)) so the core churns violently; a little
       // per-particle radius wobble adds chaos without a real turbulence sim.
-      const omega = (cfg.maxTangential * t.intensity * 0.7) / Math.max(r, 2);
+      const omega = (cfg.maxTangential * intensity * 0.7) / Math.max(r, 2);
       this.angle[i] += omega * dt;
       const wob = 1 + 0.12 * Math.sin(this.angle[i] * 3.3 + i);
-      this.height[i] += this.rise[i] * t.intensity * dt;
+      this.height[i] += this.rise[i] * intensity * dt;
       if (this.height[i] > this.maxY[i]) this.resetParticle(i);
 
       const j = i * 3;
@@ -155,7 +184,7 @@ export class FunnelVisual {
       this.positions[j + 2] = Math.sin(this.angle[i]) * rw;
     }
     (this.dust.geometry.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
-    this.dustMat.opacity = 0.42 * t.intensity;
+    this.dustMat.opacity = 0.42 * intensity;
   }
 }
 
@@ -204,15 +233,17 @@ const COLUMN_FRAG = /* glsl */ `
     // Scroll the noise downward → reads as material rising up the funnel.
     vec2 st = vec2(vUv.x * 3.0 + uTime * 0.10, vH * 4.0 - uTime * 0.55);
     float n = fbm(st);
-    float body = smoothstep(0.28, 0.72, n);
+    float body = smoothstep(0.24, 0.72, n);
 
     // Fade into the sky at the top; keep the ground tip slightly soft.
     float fade = smoothstep(1.0, 0.75, vH) * mix(0.75, 1.0, smoothstep(0.0, 0.15, vH));
-    float alpha = body * fade * (0.6 + 0.4 * uIntensity) * uIntensity;
+    // Denser/more opaque than before so the column reads as a solid wall of
+    // debris rather than a translucent wisp (§2d).
+    float alpha = body * fade * (0.78 + 0.22 * uIntensity) * uIntensity;
 
     // Darker, dirtier funnel — near-black in the dense folds easing to a muddy
     // brown-grey, so the column reads as a menacing wall of debris, not pale smoke.
-    vec3 col = mix(vec3(0.035, 0.035, 0.03), vec3(0.14, 0.13, 0.10), n);
+    vec3 col = mix(vec3(0.025, 0.025, 0.022), vec3(0.13, 0.12, 0.095), n);
     gl_FragColor = vec4(col, alpha);
   }
 `;

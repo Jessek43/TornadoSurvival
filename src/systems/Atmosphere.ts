@@ -66,6 +66,8 @@ export class Atmosphere {
   private readonly composer: EffectComposer;
   private readonly sun: THREE.DirectionalLight;
   private readonly sunBaseIntensity = 1.45;
+  private readonly hemi: THREE.HemisphereLight;
+  private readonly hemiBaseIntensity = 1.6;
 
   private readonly sky: THREE.Mesh;
   private readonly skyMat: THREE.ShaderMaterial;
@@ -73,8 +75,16 @@ export class Atmosphere {
   private readonly vignette: VignetteEffect;
   private static readonly VIGNETTE_BASE = 0.48; // deepened for mood
 
+  /** 0..1 proximity-driven darkness ramp (nearest funnel). Public so the
+   *  ?debug HUD can report the exact ramp value (§2d readout). */
+  danger = 0;
+
   private readonly fogBase = new THREE.Color(FOG_COLOR);
   private readonly flashColor = new THREE.Color(FLASH_COLOR);
+  // Where the fog is pushed as a funnel bears down: a dark grey-green
+  // pre-storm murk, so the world dims AND desaturates toward the storm (§2d).
+  private readonly stormFog = new THREE.Color(0x171c18);
+  private readonly fogScratch = new THREE.Color();
 
   /** 1 right at a strike, exponentially decaying to 0. */
   private flash = 0;
@@ -132,7 +142,9 @@ export class Atmosphere {
     // green pass (1.35 vs 0.9) because the new sky/horizon is brighter — the
     // world must not read as black cutouts against it (readability rule).
     // The warm interior pinpricks still pop against this cold exterior fill.
-    scene.add(new THREE.HemisphereLight(0x6a7480, 0x443e34, 1.6));
+    // Stored so the proximity ramp (update) can dim it as a funnel closes in.
+    this.hemi = new THREE.HemisphereLight(0x6a7480, 0x443e34, this.hemiBaseIntensity);
+    scene.add(this.hemi);
 
     // Low, slanted "storm light" — the only shadow caster. Slightly warmed for
     // the late-afternoon-under-the-shelf feel.
@@ -190,13 +202,22 @@ export class Atmosphere {
     this.sky.position.copy(this.camera.position);
     this.skyMat.uniforms.uTime.value = this.time;
 
-    // Danger 0..1 — how much the storm should own the sky right now.
-    const dist = this.tornado.position.distanceTo(playerPos);
-    const danger = this.tornado.intensity * THREE.MathUtils.clamp(1 - dist / 150, 0, 1);
+    // Danger 0..1 — how much the storm should own the sky right now. Keyed off
+    // the NEAREST funnel (§2a), so a second funnel darkens the scene on its own.
+    const danger = this.tornado.feltIntensity(playerPos.x, playerPos.z, 150);
+    this.danger = danger;
 
     // The vignette tightens toward tunnel-vision as the funnel bears down —
     // a cheap, continuously-scaling dread cue (independent of the lightning).
     this.vignette.darkness = Atmosphere.VIGNETTE_BASE + danger * 0.28;
+
+    // Proximity darkness ramp (§2d): dim the ambient fill + storm light and
+    // push the fog toward a dark grey-green as the funnel nears. Ramped by
+    // distance (via `danger`), never a hard switch. The sun's danger dimming is
+    // folded into its base BEFORE the lightning spike below, so a strike still
+    // blows out at full strength.
+    this.hemi.intensity = this.hemiBaseIntensity * (1 - 0.5 * danger);
+    this.fogScratch.copy(this.fogBase).lerp(this.stormFog, 0.65 * danger);
 
     // Poisson lightning: exponentially-distributed gaps whose rate rises
     // with danger (a strike every ~20 s far away, every ~2.5 s in the thick
@@ -224,13 +245,13 @@ export class Atmosphere {
     }
     this.bgFlash *= Math.exp(-11 * dt); // shorter than a close strike — a flicker
 
-    // Flash response — same values as before, now applied to the gradient sky
-    // (via a uniform) and the fog instead of a flat background color. Sun
-    // spike, decay, and the 0.6 tint strength are unchanged.
-    this.sun.intensity = this.sunBaseIntensity * (1 + this.flash * 5);
+    // Flash response — the flash spike/decay/tint strength are unchanged; the
+    // sun's danger dimming is folded into its base so a strike still blows out
+    // at full strength, and the flash lerps FROM the already-darkened storm fog.
+    this.sun.intensity = this.sunBaseIntensity * (1 - 0.45 * danger) * (1 + this.flash * 5);
     this.skyMat.uniforms.uFlash.value = this.flash;
     this.skyMat.uniforms.uBgFlash.value = this.bgFlash;
-    this.fog.color.copy(this.fogBase).lerp(this.flashColor, this.flash * 0.6);
+    this.fog.color.copy(this.fogScratch).lerp(this.flashColor, this.flash * 0.6);
   }
 
   /** Replaces renderer.render — the whole frame goes through the grade. */

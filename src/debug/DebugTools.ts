@@ -105,6 +105,11 @@ export class DebugTools {
     tor.add(GameConfig.tornado, "wakeRadius", 10, 60);
     tor.add(GameConfig.tornado, "gapDuration", 5, 60);
     tor.add(GameConfig.tornado, "lateralOffsetMax", 0, 60);
+    // §2 — crank these to 1 to force a double funnel / through-building pass on
+    // the NEXT round (rolled in TornadoSystem.begin) for verification.
+    tor.add(GameConfig.tornado, "doubleTornadoChance", 0, 1);
+    tor.add(GameConfig.tornado, "throughBuildingChance", 0, 1);
+    tor.add(GameConfig.tornado, "pathCurveAmp", 0, 20);
     tor.close();
     const mat = gui.addFolder("break thresholds");
     mat.add(MATERIALS.glass, "breakThreshold", 20, 1000);
@@ -180,9 +185,33 @@ export class DebugTools {
     // Section readouts (stairwell-light mounts §1 / ground gap §2 / fall dmg §3).
     this.levelLabel.textContent = [
       this.stairReadout(),
+      this.tornadoReadout(),
       this.groundGapReadout(),
       `last landing: ${this.player.lastFallSpeed.toFixed(1)} m/s -> ${this.player.lastFallDamage.toFixed(0)} hp`,
     ].join("\n");
+  }
+
+  /** §2 — the multi-funnel readout: this round's funnel count + the
+   *  through-building flag (so ~20% / ~30% is observable over rounds), each
+   *  live funnel's path center, the nearest-funnel distance, the darkness ramp
+   *  (== Atmosphere's danger, recomputed from the same feltIntensity formula),
+   *  and the GLOBAL debris count vs cap — the "total debris ≤ cap with two
+   *  funnels" assertion. */
+  private tornadoReadout(): string {
+    const t = this.tornado;
+    const p = this.player.position;
+    const centers =
+      t.funnels.map((f) => `(${f.position.x.toFixed(0)},${f.position.z.toFixed(0)})`).join(" ") ||
+      "-";
+    const dist = t.funnels.length ? t.nearestFunnelDist(p.x, p.z) : Infinity;
+    const darkness = t.feltIntensity(p.x, p.z, 150);
+    const capOk = this.debris.active <= this.debris.budget ? "≤cap✓" : "OVER✗";
+    return (
+      `§2 funnels ${t.funnels.length}${t.funnelCount === 2 ? " (DOUBLE)" : ""}` +
+      ` · through-bldg ${t.throughBuilding ? "YES" : "no"} · centers ${centers}` +
+      ` · nearest ${dist === Infinity ? "-" : dist.toFixed(0) + "m"} · darkness ${darkness.toFixed(2)}` +
+      ` · debris ${this.debris.active}/${this.debris.budget} ${capOk}`
+    );
   }
 
   /** §2 — cast straight down from the player's feet (excluding the player's own

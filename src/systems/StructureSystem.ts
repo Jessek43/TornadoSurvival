@@ -310,9 +310,10 @@ export class StructureSystem {
     }
 
     for (const s of this.structures) {
-      const dx = this.tornado.position.x - s.center.x;
-      const dz = this.tornado.position.z - s.center.z;
-      const dist = Math.hypot(dx, dz);
+      // Distance to the NEAREST live funnel (§2a): a second funnel wakes and
+      // breaks its own neighborhood independently, and a section only re-sleeps
+      // once BOTH funnels have moved past it.
+      const dist = this.tornado.nearestFunnelDist(s.center.x, s.center.z);
       const tiny = s.blocks.length <= TINY_SECTION_BLOCKS;
 
       if (s.state === "dormant") {

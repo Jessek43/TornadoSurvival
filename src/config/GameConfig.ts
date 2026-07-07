@@ -23,7 +23,7 @@ export const GameConfig = {
     // hospital, find a stairwell, climb, and pick a room before the first
     // pass. Round total ≈ 25 + (23s pass + 28s gap)×N ≈ 1.7 min (2 passes) to
     // 2.5 min (3 passes) — inside the 2–5 min target.
-    warningTime: 25,
+    warningTime: 15,
   },
 
   player: {
@@ -32,7 +32,7 @@ export const GameConfig = {
     radius: 0.35, // capsule radius (m)
     eyeHeight: 1.65, // camera height above the feet
 
-    walkSpeed: 5.5, // m/s
+    walkSpeed: 4.5, // m/s
     sprintMultiplier: 1.6, // × walkSpeed while sprinting (hold Shift)
     crouchMultiplier: 0.5, // × walkSpeed while crouched (hold Ctrl / C)
     crouchHeight: 1.1, // capsule TOTAL height while fully crouched (m) — the
@@ -42,7 +42,7 @@ export const GameConfig = {
     crouchLerp: 14, // 1/s — how fast the view dips into / rises out of a crouch
     // --- sprint stamina (HUD "SPRINT" bar) ---
     sprintDrain: 0.2, // /s while sprinting → a full bar ≈ 5 s of running
-    sprintRegen: 0.28, // /s recovered while walking / standing
+    sprintRegen: 0.15, // /s recovered while walking / standing
     sprintRecoverThreshold: 0.2, // after emptying, must refill this far before sprint re-enables
     climbSpeed: 3, // m/s up/down a ladder
     jumpSpeed: 4.8, // m/s upward → apex ≈ v²/2g ≈ 1.2 m
@@ -60,7 +60,7 @@ export const GameConfig = {
     sweepPressure: 900, // |w|² (≈30 m/s wind) — above this, ungripped → flung
     windPush: 0.5, // 1/s — stagger acceleration factor below the sweep point
     gripRange: 1.6, // m to the nearest intact block to be able to hold on
-    staminaDrain: 0.16, // /s at exactly sweepPressure (scales with strain, capped)
+    staminaDrain: 0.24, // /s at exactly sweepPressure (scales with strain, capped)
     // Cap on the pressure/sweep strain multiplier used for stamina drain.
     // Without a cap the drain scaled with pressure UNBOUNDED, so deep in a pass
     // a full stamina bar emptied in a fraction of a second and grip did nothing
@@ -114,7 +114,7 @@ export const GameConfig = {
   },
 
   camera: {
-    fov: 75,
+    fov: 85,
     chaseDistance: 6.5, // m behind the flung body
     chaseHeight: 3, // m above it
     chaseLerp: 4, // 1/s spring toward the desired chase position
@@ -126,7 +126,7 @@ export const GameConfig = {
   // ?debug panel. Units match the PBR point lights used by InteriorLights.
   flashlight: {
     color: 0xfff1d6, // warm white
-    intensity: 105, // luminous intensity when on (0 = off) — a modest beam
+    intensity: 100, // luminous intensity when on (0 = off) — a modest beam
     distance: 48, // m — beam cutoff
     angle: 0.34, // rad — half-cone (~19°): a tighter, focused band
     penumbra: 0.45, // soft cone edge
@@ -162,8 +162,8 @@ export const GameConfig = {
     // side keeps its structure. Higher = tighter destruction band. This plus
     // the offset standoff below is what makes a single pass partial.
     falloffExp: 1.1,
-    height: 60, // funnel height; winds fade out above ~80% of this
-    gustAmp: 0.35, // ±35% gust modulation from noise
+    height: 200, // funnel height; winds fade out above ~80% of this
+    gustAmp: 0.5, // ±35% gust modulation from noise
     gustScale: 0.05, // spatial gust frequency (1/m)
     gustSpeed: 1.1, // temporal gust frequency (1/s)
 
@@ -171,13 +171,13 @@ export const GameConfig = {
     // A round is 2–3 straight passes, each spawning on a circle of passRadius
     // around the hospital, travelling a straight line (+ lateral jitter) that
     // aims at hospitalCenter offset sideways, then exiting → calm gap → next.
-    moveSpeed: 6, // m/s ground speed during a pass
-    passRadius: 75, // m — spawn/exit distance from the hospital center (scaled with the 64×48 footprint)
+    moveSpeed: 15, // m/s ground speed during a pass
+    passRadius: 120, // m — spawn/exit distance from the hospital center (scaled with the 64×48 footprint)
     passRampIn: 5, // s — intensity 0→1 as the funnel approaches
     passRampOut: 5, // s — intensity 1→0 as it recedes
     passCountMin: 2,
     passCountMax: 3,
-    gapDuration: 28, // s of calm between passes (the near-miss tension)
+    gapDuration: 20, // s of calm between passes (the near-miss tension)
     // Lateral aim offset (perpendicular standoff of the pass line from the
     // hospital center). A MINIMUM standoff guarantees the funnel core never
     // bullseyes the building — it always passes to one side, so the opposite
@@ -186,9 +186,27 @@ export const GameConfig = {
     // damage swath; grazing reliably leaves the far side intact. Rescaled
     // from 26–46 for the 64×48 footprint: min 30 keeps the far facade
     // (≥ ~54 m from the pass line) outside the ~32 m cladding-kill band.
-    lateralOffsetMin: 30,
+    lateralOffsetMin: 10,
     lateralOffsetMax: 50,
     lateralJitter: 4, // rad/s-ish authority of the noise wobble on the path
+
+    // --- §2 path variety + multi-funnel ---
+    // A slow, per-pass lateral MEANDER on top of the fast jitter above, so a
+    // pass drifts and curves instead of tracking a repeatable ruler-line —
+    // "less predictable path" (§2c). Seeded per funnel (independent channels),
+    // so it stays deterministic and tuneable, NOT fully random.
+    pathCurveAmp: 6, // m/s of lateral authority of the meander
+    pathCurveFreq: 0.13, // 1/s temporal frequency of the meander
+    // Per-ROUND rolls (decided in TornadoSystem.begin, shown in the ?debug HUD):
+    doubleTornadoChance: 0.2, // 20% — a concurrent SECOND funnel this round (§2a)
+    throughBuildingChance: 0.3, // 30% — path centered THROUGH the footprint (§2b)
+    // Through-building lateral offset range (|offset| ≤ this): small enough that
+    // the core crosses the 64×48 m footprint instead of skirting an edge.
+    throughOffsetMax: 14,
+    // Hard cap on concurrent funnels — sizes the funnel-visual pools and the
+    // "total debris ≤ global cap" reasoning (the DebrisManager budget is ONE
+    // global pool shared across all funnels, so the cap holds by construction).
+    maxFunnels: 2,
 
     // A section wakes into per-block physics when the funnel is within this
     // horizontal distance. ABSOLUTE (tied to how far destructive wind reaches:
