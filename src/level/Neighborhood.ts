@@ -88,19 +88,40 @@ const HW = 3.5; // half width along the facade
 const HD = 4.0; // half depth
 const T = 0.22; // wall thickness
 
+// --- internal stair (a compact straight flight in the back-right corner,
+//     reusing the hospital's abutting-tread pattern: rise < the 0.5 m autostep,
+//     run > the capsule diameter, treads overlap the step below so there is no
+//     gap). Each upper floor slab gets a matching hole cut over the flight so
+//     the player climbs cleanly through — never a floating slab or a ceiling
+//     bonk. All in the house's local (across, depth) frame, so it lands right
+//     for every facing. ---
+const STAIR_RISE = 0.4; // < 0.5 m autostep
+const STAIR_STEPS = Math.round(STORY_H / STAIR_RISE); // 7 → exactly one storey
+const STAIR_RUN = 0.78; // > 0.7 m capsule diameter
+const TREAD_T = STAIR_RISE + 0.12; // overlaps the step below (no gap)
+const STAIR_W = 1.1; // tread width (across)
+const STAIR_AC = HW - 0.9; // tread center, hard against the right wall
+const STAIR_D0 = -HD + 0.55; // back edge of the bottom tread
+const HOLE_A0 = HW - 1.6; // stair opening: across band
+const HOLE_D0 = STAIR_D0 + STAIR_RUN; // solid slab under tread 1; open above tread 2+
+const HOLE_D1 = STAIR_D0 + STAIR_STEPS * STAIR_RUN; // top tread far edge (= landing)
+
 /**
- * One enterable house: hollow shell with a door gap on the facing side, glass
- * windows, a second-story slab when 2-story, and a stepped blocky gable roof.
- * `facing` is the axis-aligned direction the front door looks toward
- * (+z/−z/+x/−x — no rotation support in the block engine, so facades are
- * built per-direction by swapping axes).
+ * One enterable house: a hollow shell with a door gap on the facing side, glass
+ * windows on every storey's perimeter walls, 1–3 storeys joined by real
+ * climbable stairs, and a stepped blocky gable roof. Furnished per floor
+ * (living/kitchen ground, bedrooms above), varied by `style`. `facing` is the
+ * axis-aligned direction the front door looks toward (+z/−z/+x/−x — no rotation
+ * support in the block engine, so facades are built per-direction by swapping
+ * axes).
  */
 function buildHouse(
   cx: number,
   cz: number,
   facing: "+z" | "-z" | "+x" | "-x",
-  stories: 1 | 2,
+  stories: 1 | 2 | 3,
   wall: MaterialId,
+  style: number,
 ): SectionSpec {
   const blocks: BlockDef[] = [];
   // Local frame: `f` = facing axis sign/axis, house is HW wide across the
@@ -159,8 +180,32 @@ function buildHouse(
       putSide(wall, 0, y + 2.0, 3, STORY_H - 2.0);
     }
 
-    // Second-story floor slab (rests on the walls below).
-    if (s > 0) put(wall, 0, y - 0.12, 0, 2 * HW, 0.24, 2 * HD);
+    // Upper floor slab (top face at the floor line y), with a hole cut over the
+    // stairwell so the flight below reaches it. Three pieces around the hole,
+    // each still resting on the walls below, so nothing is unsupported and the
+    // next flight up starts on the solid back piece.
+    if (s > 0) {
+      put(wall, (-HW + HOLE_A0) / 2, y - 0.24, 0, HOLE_A0 + HW, 0.24, 2 * HD); // left of hole
+      put(wall, (HOLE_A0 + HW) / 2, y - 0.24, (HOLE_D1 + HD) / 2, HW - HOLE_A0, 0.24, HD - HOLE_D1); // front of hole
+      put(wall, (HOLE_A0 + HW) / 2, y - 0.24, (-HD + HOLE_D0) / 2, HW - HOLE_A0, 0.24, HOLE_D0 + HD); // behind hole
+    }
+  }
+
+  // Stairs — one flight per storey gap, stacked in the same back-right corner.
+  for (let k = 0; k < stories - 1; k++) {
+    for (let i = 1; i <= STAIR_STEPS; i++) {
+      const dep = STAIR_D0 + (i - 0.5) * STAIR_RUN;
+      put("wood", STAIR_AC, k * STORY_H + i * STAIR_RISE - TREAD_T, dep, STAIR_W, TREAD_T, STAIR_RUN);
+    }
+  }
+
+  // Furniture per floor: living/kitchen on the ground floor, bedrooms above,
+  // the top floor a study or spare bedroom by `style`. All kept in the left
+  // half, clear of the stair opening on the right.
+  for (let s = 0; s < stories; s++) {
+    const kind: "living" | "bed" | "study" =
+      s === 0 ? "living" : s === 1 ? "bed" : style % 2 === 0 ? "study" : "bed";
+    furnishHouseLevel(put, s * STORY_H, kind);
   }
 
   // Stepped blocky gable roof (wood — light, tears off early like real roofs).
@@ -188,16 +233,49 @@ function buildHouse(
   put("wood", 1.2, 0, HD + 1.6, 0.18, 2.3, 0.18);
   put("wood", 0, 2.3, HD + 1.0, 3.2, 0.16, 2.2); // porch roof
 
-  // Ground-floor furnishing — freestanding clutter clear of the door path,
-  // so an entered house reads lived-in (and sheds furniture debris when it
-  // goes). Same block idiom as the hospital props.
-  put("wood", -1.9, 0, -2.2, 1.7, 0.5, 0.9); // bed frame
-  put("propWhite", -1.9, 0.5, -2.2, 1.5, 0.2, 0.8); // bedding
-  put("wood", 1.8, 0, -2.6, 0.9, 0.72, 0.9); // table
-  put("furniture", 1.9, 0, 1.6, 1.6, 0.7, 0.7); // sofa
-  put("wood", -2.4, 0, 2.4, 0.9, 1.8, 0.5); // wardrobe
-
   return { name: "house", blocks };
+}
+
+/** `put` in the house's local (across, depth) frame — see buildHouse. */
+type PutFn = (
+  mat: MaterialId,
+  across: number,
+  bottom: number,
+  depth: number,
+  wAcross: number,
+  h: number,
+  wDepth: number,
+) => void;
+
+/**
+ * Furnish one house floor, all in the LEFT half (across ≤ ~0) so it never
+ * fouls the right-side stair opening or the door path. Freestanding on the
+ * floor (released with the house by the per-section support flood-fill, and
+ * pooled by the same debris caps as every other block). Living/kitchen on the
+ * ground, a bedroom above, a study or spare bedroom on the top floor.
+ */
+function furnishHouseLevel(put: PutFn, y: number, kind: "living" | "bed" | "study"): void {
+  if (kind === "living") {
+    put("propWhite", -HW + 0.45, y, -0.6, 0.6, 0.85, 3.2); // kitchen counter base
+    put("metal", -HW + 0.45, y + 0.85, -0.6, 0.62, 0.06, 3.2); // steel worktop
+    put("metal", -HW + 0.5, y, -2.95, 0.72, 1.75, 0.7); // fridge
+    put("furniture", -1.1, y, 2.3, 2.0, 0.7, 0.85); // sofa
+    put("wood", -1.1, y, 1.1, 1.0, 0.4, 0.6); // coffee table
+    put("wood", -1.1, y, 3.45, 1.3, 0.5, 0.35); // TV stand
+    put("accentBlue", -1.1, y + 0.5, 3.45, 1.15, 0.62, 0.06); // TV screen (rests on the stand)
+  } else if (kind === "bed") {
+    put("wood", -1.7, y, -1.9, 1.7, 0.5, 2.1); // bed frame
+    put("propWhite", -1.7, y + 0.5, -1.9, 1.55, 0.25, 2.0); // bedding
+    put("propWhite", -0.35, y, -3.15, 0.5, 0.5, 0.5); // nightstand
+    put("wood", -HW + 0.45, y, 1.7, 0.6, 1.9, 1.3); // wardrobe
+    put("wood", -1.2, y, 3.35, 1.5, 0.9, 0.45); // dresser
+  } else {
+    put("propWhite", -2.5, y, -2.6, 1.5, 0.72, 0.7); // desk
+    put("wood", -2.5, y + 0.72, -2.6, 1.6, 0.06, 0.8); // desk top
+    put("furniture", -2.5, y, -1.7, 0.5, 0.9, 0.5); // desk chair
+    put("wood", -HW + 0.4, y, 1.2, 0.5, 1.9, 2.4); // bookshelf
+    put("furniture", -1.1, y, 3.0, 1.9, 0.55, 0.8); // day bed
+  }
 }
 
 /** A small flat-roofed commercial box (corner shop) with a glazed front. */
@@ -264,6 +342,12 @@ function prand(seed: number): number {
  * Game.ts (fixture→section indices point into the hospital range, so order
  * matters — hospital first).
  */
+/** Vary house height 1–3 storeys deterministically from a seed. */
+function pickStories(seed: number): 1 | 2 | 3 {
+  const r = prand(seed);
+  return r < 0.32 ? 1 : r < 0.7 ? 2 : 3;
+}
+
 export function buildNeighborhood(): SectionSpec[] {
   const sections: SectionSpec[] = [];
 
@@ -273,9 +357,8 @@ export function buildNeighborhood(): SectionSpec[] {
   const mainRowZ = MAIN_Z + STREET_W / 2 + 9; // front wall ~5.5 m behind the sidewalk
   const mainXs = [-62, -50, -14, 14, 50, 62];
   mainXs.forEach((x, i) => {
-    const stories: 1 | 2 = prand(i + 3) > 0.45 ? 2 : 1;
     const wall: "wood" | "brick" = prand(i + 11) > 0.5 ? "brick" : "wood";
-    sections.push(buildHouse(x, mainRowZ, "-z", stories, wall));
+    sections.push(buildHouse(x, mainRowZ, "-z", pickStories(i + 3), wall, i));
   });
 
   // --- houses on the cross streets' outer sides, facing the street ---
@@ -283,8 +366,8 @@ export function buildNeighborhood(): SectionSpec[] {
     const x = side * (CROSS_X + 10);
     let i = 0;
     for (const z of [10, -8, -26]) {
-      const stories: 1 | 2 = prand(i++ + (side + 2) * 7) > 0.5 ? 2 : 1;
-      sections.push(buildHouse(x, z, side < 0 ? "+x" : "-x", stories, "wood"));
+      const seed = i++ + (side + 2) * 7;
+      sections.push(buildHouse(x, z, side < 0 ? "+x" : "-x", pickStories(seed), "wood", seed));
     }
   }
 
