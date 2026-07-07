@@ -433,6 +433,28 @@ function buildStairwell(
     blocks.push(
       block("concrete", cx, yBase + H - P.deckT, (runFront + floorZ1) / 2, landW, P.deckT, floorZ1 - runFront),
     );
+    // GAP FILL — the landing (width landW) is narrower than the void (2·hw), so
+    // a ~0.45 m slot opened on the OPEN side (toward the building center)
+    // between the landing edge and the wing floor deck: exactly the stair↔deck
+    // seam the player steps across at every arrival. Bridge it with a slab
+    // flush at the floor plane. It abuts the landing (support) and stops at the
+    // void edge (cx±hw) where the wing deck begins — abutment, not overlap, so
+    // coplanar-overlap stays 0 and no new fall-through hole is opened.
+    const openSign = cx < 0 ? 1 : -1; // walls are on the far side; center is open
+    const fillW = S.hw - landW / 2;
+    if (fillW > 0.02) {
+      blocks.push(
+        block(
+          "concrete",
+          cx + openSign * (landW / 2 + fillW / 2),
+          yBase + H - P.deckT,
+          (runFront + floorZ1) / 2,
+          fillW,
+          P.deckT,
+          floorZ1 - runFront,
+        ),
+      );
+    }
   }
 
   // FIXTURES — mounted flush under the underside of the arrival LANDING one

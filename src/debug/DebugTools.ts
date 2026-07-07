@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import RAPIER from "@dimforge/rapier3d-compat";
 import GUI from "lil-gui";
 import { GameConfig } from "../config/GameConfig";
 import { MATERIALS } from "../level/Materials";
@@ -8,6 +9,7 @@ import type { PlayerController } from "../systems/PlayerController";
 import type { StructureSystem } from "../systems/StructureSystem";
 import type { DebrisManager } from "../systems/DebrisManager";
 import type { InteriorLights } from "../systems/InteriorLights";
+import type { Physics } from "../core/Physics";
 import type { StairLight } from "../level/hospital/params";
 
 const PATH_CAPACITY = 2000; // ≈10 min of breadcrumbs at 0.3 s intervals
@@ -45,6 +47,8 @@ export class DebugTools {
   // scratch
   private readonly wind = new THREE.Vector3();
   private readonly arrowOrigin = new THREE.Vector3();
+  /** Reused downward ray for the §2 ground-gap probe (no per-frame alloc). */
+  private readonly downRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
 
   constructor(
     uiRoot: HTMLElement,
@@ -56,6 +60,7 @@ export class DebugTools {
     private readonly debris: DebrisManager,
     private readonly interiorLights: InteriorLights,
     private readonly renderer: THREE.WebGLRenderer,
+    private readonly physics: Physics,
     private readonly stairLights: StairLight[],
   ) {
     this.label = document.createElement("div");
@@ -173,7 +178,28 @@ export class DebugTools {
     }
 
     // Section readouts (stairwell-light mounts §1 / ground gap §2 / fall dmg §3).
-    this.levelLabel.textContent = this.stairReadout();
+    this.levelLabel.textContent = [this.stairReadout(), this.groundGapReadout()].join("\n");
+  }
+
+  /** §2 — cast straight down from the player's feet (excluding the player's own
+   *  capsule) and report the distance to the first solid. Standing on a floor
+   *  it reads ~0; walking over an unclosed gap it spikes to the drop below. */
+  private groundGapReadout(): string {
+    const p = this.player.position;
+    const feetY = p.y - GameConfig.player.height / 2;
+    this.downRay.origin.x = p.x;
+    this.downRay.origin.y = feetY + 0.1; // start just inside the capsule bottom
+    this.downRay.origin.z = p.z;
+    const hit = this.physics.world.castRay(
+      this.downRay,
+      60,
+      true,
+      undefined,
+      undefined,
+      this.player.collider,
+    );
+    const gap = hit ? Math.max(hit.timeOfImpact - 0.1, 0) : Infinity;
+    return `ground below feet: ${gap === Infinity ? ">60" : gap.toFixed(2)} m (spikes over a gap)`;
   }
 
   /** §1 — per-floor stairwell-light mount target + current live state, per
