@@ -83,6 +83,18 @@ export const GameConfig = {
     recoverMaxSpeed: 3.5, // m/s below which a grounded body counts as settled
     safeImpactSpeed: 8, // m/s of sudden velocity change that starts to hurt
     impactDamageFactor: 4, // hp per m/s beyond safe
+
+    // --- fall damage (ON-FOOT landings only) ---
+    // Deliberately SEPARATE from the ragdoll impact/jolt constants above so
+    // making falls dangerous doesn't also change storm-fling lethality. The old
+    // on-foot fall used the shared safeImpactSpeed 8 / impactDamageFactor 4, so
+    // a full storey (≈8.4 m/s) barely dealt 1.6 hp and 3 storeys wasn't lethal.
+    // Raised so a ~2-storey drop (≈11.9 m/s → ~65 hp) is clearly dangerous and
+    // ~3+ storeys (≥14.5 m/s → ~94 hp, 4 storeys lethal) will kill. The 6 m/s
+    // safe floor stays above a normal jump landing (~4.8 m/s) so jumping and
+    // ≤1.8 m hops never hurt. Tunable live via the fall readout in ?debug.
+    fallSafeSpeed: 6, // m/s of landing speed below which a fall is harmless
+    fallDamageFactor: 11, // hp per m/s of landing speed beyond fallSafeSpeed
   },
 
   damage: {

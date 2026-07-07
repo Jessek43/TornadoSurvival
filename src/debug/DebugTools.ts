@@ -178,7 +178,11 @@ export class DebugTools {
     }
 
     // Section readouts (stairwell-light mounts §1 / ground gap §2 / fall dmg §3).
-    this.levelLabel.textContent = [this.stairReadout(), this.groundGapReadout()].join("\n");
+    this.levelLabel.textContent = [
+      this.stairReadout(),
+      this.groundGapReadout(),
+      `last landing: ${this.player.lastFallSpeed.toFixed(1)} m/s -> ${this.player.lastFallDamage.toFixed(0)} hp`,
+    ].join("\n");
   }
 
   /** §2 — cast straight down from the player's feet (excluding the player's own

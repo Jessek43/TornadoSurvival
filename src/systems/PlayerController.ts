@@ -39,6 +39,12 @@ export class PlayerController {
   runStamina = 1;
   gripping = false;
 
+  /** Debug/tuning readout (§3): the downward speed and hp dealt on the last
+   *  on-foot landing. Refreshed every time the player becomes grounded (0 hp
+   *  for a soft landing), so the ?debug HUD shows the number to tune against. */
+  lastFallSpeed = 0;
+  lastFallDamage = 0;
+
   readonly body: RAPIER.RigidBody;
   readonly collider: RAPIER.Collider;
   readonly mesh: THREE.Mesh;
@@ -126,6 +132,16 @@ export class PlayerController {
     this.dummy = buildDummy();
     this.dummy.visible = false;
     scene.add(this.dummy);
+
+    // §3 — record the fall-damage tuning at startup (the "print the current
+    // constants before changing them" step): the on-foot fall used to share the
+    // ragdoll constants and is now on dedicated, much steeper ones.
+    const p = GameConfig.player;
+    console.info(
+      `[falldamage] before (shared w/ ragdoll): safe ${p.safeImpactSpeed} m/s, ` +
+        `factor ${p.impactDamageFactor} hp per m/s · now (dedicated on-foot): ` +
+        `safe ${p.fallSafeSpeed} m/s, factor ${p.fallDamageFactor} hp per m/s`,
+    );
   }
 
   setClimbVolumes(volumes: THREE.Box3[]): void {
@@ -328,11 +344,16 @@ export class PlayerController {
     this.grounded = this.controller.computedGrounded();
 
     // Hard landing on foot → fall damage (velocity.y still holds fall speed).
-    if (this.grounded && !wasGrounded && this.velocity.y < -cfg.safeImpactSpeed) {
-      this.damage.takeDamage(
-        (-this.velocity.y - cfg.safeImpactSpeed) * cfg.impactDamageFactor,
-        "fall",
-      );
+    // Uses the dedicated fall constants so tuning falls is independent of the
+    // ragdoll jolt tuning. Records the last landing for the ?debug readout.
+    if (this.grounded && !wasGrounded) {
+      const landingSpeed = Math.max(-this.velocity.y, 0);
+      this.lastFallSpeed = landingSpeed;
+      this.lastFallDamage =
+        landingSpeed > cfg.fallSafeSpeed
+          ? (landingSpeed - cfg.fallSafeSpeed) * cfg.fallDamageFactor
+          : 0;
+      if (this.lastFallDamage > 0) this.damage.takeDamage(this.lastFallDamage, "fall");
     }
 
     // Bumped a ceiling while ascending: kill upward velocity so we fall
