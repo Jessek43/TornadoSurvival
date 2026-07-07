@@ -7,7 +7,8 @@ import {
   type RoomSpec,
 } from "./params";
 import { block, type HospitalShell } from "./shell";
-import { furnishWardFloor, type WingCtx } from "./archetypes";
+import { furnishRoomFloor, furnishEntranceHall, type WingCtx } from "./archetypes";
+import { FLOOR_LAYOUTS } from "./layouts";
 import * as props from "./props";
 
 export { DECK_PALETTE } from "./archetypes";
@@ -27,10 +28,12 @@ export interface FurnishResult {
  * per-section support flood-fill is the no-floating-props mechanism, so
  * props must ride their wing's section) and pushing new ceiling fixtures.
  *
- * Slice status (vertical-slice mandate):
- *  - WARD floors (f ≥ 2, outer rows): implemented — the re-gated slice.
- *  - Treatment (f=1) / lobby (f=0) / generic middle-row / exterior signage,
- *    podium glazing, ambulances: later runs, after Jesse's ward gate.
+ * Layout source: every outer-wing floor is dispatched by its FLOOR_LAYOUTS
+ * entry (layouts.ts) — floor 0 is the entrance concourse (reception + benches
+ * in the two front-center wings; doctor's offices in the other outer wings),
+ * floors 1→top are wards of varying density, and one wing on one floor hosts
+ * the building's single kitchen. The middle row (gz=1) stays bare central
+ * circulation (spine + stair voids).
  */
 export function furnish(shell: HospitalShell): FurnishResult {
   const shellCounts = shell.sections.map((s) => s.blocks.length);
@@ -38,18 +41,45 @@ export function furnish(shell: HospitalShell): FurnishResult {
   const addFixture = (f: Fixture): void => {
     shell.lightFixtures.push(f);
   };
+  const budget = P.furnish.budgetPerFloor;
 
   // Wings were pushed first, in (gx, gz) order — see buildShell().
   for (let gx = 0; gx < COLS; gx++) {
     for (let gz = 0; gz < P.rows; gz++) {
+      if (gz === 1) continue; // middle row = corridors + stair voids, no rooms
       const section = shell.sections[gx * P.rows + gz];
       const ctx: WingCtx = { gx, gz, blocks: section.blocks, addFixture, rooms };
       const floors = P.colFloors[gx];
-      const outerRow = gz !== 1; // middle row = corridors + stair voids, no rooms
-      for (let f = 2; f < floors; f++) {
-        if (outerRow) furnishWardFloor(ctx, f);
+      const frontCenter = gz === 2 && (gx === 1 || gx === 2); // flanks the entrance
+      for (let f = 0; f < floors; f++) {
+        const layout = FLOOR_LAYOUTS[f];
+        if (layout.archetype === "entrance") {
+          // Floor 0: the front-center wings are the open concourse; the rest
+          // become doctor's offices.
+          if (frontCenter) furnishEntranceHall(ctx, budget.entrance);
+          else {
+            furnishRoomFloor(ctx, f, {
+              facadeRooms: layout.facadeRooms,
+              interiorRooms: layout.interiorRooms,
+              content: "office",
+              extras: layout.extras,
+              kitchen: false,
+              budget: budget.office,
+            });
+          }
+        } else {
+          const isKitchenWing =
+            layout.kitchenWing?.[0] === gx && layout.kitchenWing?.[1] === gz;
+          furnishRoomFloor(ctx, f, {
+            facadeRooms: layout.facadeRooms,
+            interiorRooms: layout.interiorRooms,
+            content: layout.content,
+            extras: layout.extras,
+            kitchen: isKitchenWing,
+            budget: budget.ward,
+          });
+        }
       }
-      // f=0 lobby (front-center wings) and f=1 treatment: later slices.
     }
   }
   furnishExterior(shell);

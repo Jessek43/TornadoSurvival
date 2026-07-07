@@ -59,15 +59,16 @@ export const HOSPITAL_PARAMS = {
   /** Extra clearance opened where two corridors cross (plaza, not a pinch). */
   crossPad: 0.6,
   /**
-   * Furnish density dial (Phase-2 detailing). The per-section 600-block cap
-   * in verify.ts is the hard geometric backstop; these are the knobs to turn
-   * if the runtime perf gate fails — never raise the cap instead.
+   * Furnish density backstop (Phase-2 detailing). Per-floor room COUNTS and
+   * density now live in the authored FLOOR_LAYOUTS table (layouts.ts); these
+   * are the per-wing block budgets each archetype is capped at (a throw fires
+   * if a floor's furnish exceeds them), sized so the tallest wing stays under
+   * the 600-block section cap in verify.ts with headroom. Turn these (or the
+   * layout room counts) down if the runtime perf gate fails — never raise the
+   * section cap instead.
    */
   furnish: {
-    roomsPerFloor: 2, // max FACADE patient rooms per ward floor per wing
-    interiorRoomsPerFloor: 1, // blind rooms across the ward corridor
-    wardExtras: true, // IV stand + chair in wide rooms (−4 blocks/room when off)
-    budgetPerFloor: { ward: 58, treatment: 40, lobby: 45, generic: 15 },
+    budgetPerFloor: { ward: 58, office: 46, entrance: 40 },
   },
   stairs: {
     /** Shaft centers — on the spine, at the ±10 rib positions (tall columns). */
@@ -219,6 +220,10 @@ export interface RoomSpec {
   /** z of the facade wall's inner face (windowed side) — facade rooms only. */
   windowZ?: number;
   kind: "facade" | "interior";
+  /** What the room is furnished as (drives the §4 kitchen/room-count asserts). */
+  content: "patient" | "office" | "kitchen";
+  /** Storey the room sits on (for the per-floor room-count report). */
+  floor: number;
   name: string;
 }
 

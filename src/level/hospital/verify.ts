@@ -8,6 +8,7 @@ import {
   type Fixture,
   type RoomSpec,
 } from "./params";
+import { FLOOR_LAYOUTS } from "./layouts";
 
 /**
  * Build-time invariants for the hospital definition — pure geometry checks
@@ -383,6 +384,36 @@ function findCorridorIntrusions(sections: SectionSpec[], shellCounts: number[]):
   return bad;
 }
 
+/**
+ * §4 detailing invariants over the authored FLOOR_LAYOUTS + placed rooms:
+ * distinct per-floor layout ids, EXACTLY ONE kitchen in the whole building
+ * (declared in the table AND actually placed), and a per-floor room-count
+ * report. ("No windows on interior walls" is the separate interior-glass == 0
+ * assert — glass only ever comes from the perimeter shell.)
+ */
+function checkFloorLayouts(rooms: RoomSpec[]): { bad: string[]; info: string[] } {
+  const bad: string[] = [];
+  const info: string[] = [];
+
+  const ids = FLOOR_LAYOUTS.map((l) => l.id);
+  const dupes = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
+  if (dupes.length) bad.push(`duplicate floor-layout id(s): ${dupes.join(", ")}`);
+
+  const kitchenConfigs = FLOOR_LAYOUTS.filter((l) => l.kitchenWing).length;
+  const kitchenRooms = rooms.filter((r) => r.content === "kitchen").length;
+  if (kitchenConfigs !== 1) bad.push(`FLOOR_LAYOUTS declares ${kitchenConfigs} kitchens (want 1)`);
+  if (kitchenRooms !== 1) bad.push(`placed ${kitchenRooms} kitchen room(s) (want 1)`);
+
+  const perFloor = new Map<number, number>();
+  for (const r of rooms) perFloor.set(r.floor, (perFloor.get(r.floor) ?? 0) + 1);
+  info.push(`kitchens (config/placed): ${kitchenConfigs}/${kitchenRooms}`);
+  info.push(
+    "floor layouts: " +
+      FLOOR_LAYOUTS.map((l, f) => `f${f}=${l.id}[${perFloor.get(f) ?? 0} rooms]`).join(", "),
+  );
+  return { bad, info };
+}
+
 export function verifyHospital(
   sections: SectionSpec[],
   fixtures: Fixture[],
@@ -430,6 +461,9 @@ export function verifyHospital(
     const roomCheck = checkRooms(boxes, opts.rooms);
     push("room enterability violations", roomCheck.bad);
     info.push(...roomCheck.info);
+    const layoutCheck = checkFloorLayouts(opts.rooms);
+    push("floor-layout / kitchen violations", layoutCheck.bad);
+    info.push(...layoutCheck.info);
   }
   if (boxes.length > MAX_TOTAL_BLOCKS) {
     failures.push(`total hospital blocks ${boxes.length} exceed ceiling ${MAX_TOTAL_BLOCKS}`);

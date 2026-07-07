@@ -13,6 +13,7 @@ import {
 } from "./params";
 import { block } from "./shell";
 import * as props from "./props";
+import type { RoomContent } from "./layouts";
 
 /**
  * PHASE 2 — floor archetypes. Each furnish*Floor function decorates ONE floor
@@ -135,7 +136,28 @@ function boundaryInset(gx: number, f: number, side: -1 | 1): number {
   return isStep ? P.wallT : P.wallT / 2;
 }
 
-export function furnishWardFloor(ctx: WingCtx, f: number): void {
+/** Per-floor room-archetype config, read from the FLOOR_LAYOUTS table by the
+ *  furnish orchestrator and passed straight through. Everything the room floor
+ *  varies per storey lives here — never a runtime random. */
+export interface RoomFloorCfg {
+  facadeRooms: number; // windowed rooms per wing
+  interiorRooms: number; // blind rooms across the corridor per wing
+  content: RoomContent; // what facade (and non-kitchen interior) rooms are
+  extras: boolean; // IV + monitor + chair in wide rooms
+  kitchen: boolean; // this wing+floor hosts the building's single kitchen
+  budget: number; // block budget for this floor (per wing)
+}
+
+/**
+ * Detail one floor of one wing as a double-loaded corridor of rooms, furnished
+ * per `cfg.content` (patient ward / doctor's offices), with an optional single
+ * kitchen. Reuses the proven room shell (separator walls, doorway, enterability
+ * registry) unchanged — only the furniture cluster inside each room varies by
+ * content, and every cluster is wall-backed within the bed's proven footprint,
+ * so walkability is preserved by construction. (Was furnishWardFloor; the ward
+ * is now just `content: "patient"`.)
+ */
+export function furnishRoomFloor(ctx: WingCtx, f: number, cfg: RoomFloorCfg): void {
   const { gx, gz, blocks, addFixture } = ctx;
   const before = blocks.length;
   const xMin = X_EDGES[gx];
@@ -152,14 +174,15 @@ export function furnishWardFloor(ctx: WingCtx, f: number): void {
   const intWallZ = facadeZ + inward * (ROOM_D + CORR_W); // interior rooms' corridor wall
   const intBackZ = facadeZ + inward * (ROOM_D + CORR_W + INT_D); // open back edge
 
-  /** One room off the ward corridor. Separator walls sit just inside the
-   *  interval edges (clear of the rib walls); the doorway sits on the
-   *  boundary side while the bed anchors to a separator wall, so entry is
-   *  never behind furniture. Records the room for verify's enterability
-   *  asserts and returns the door placement for the corridor dressing. */
+  /** One room off the corridor. Separator walls sit just inside the interval
+   *  edges (clear of the rib walls); the doorway sits on the boundary side
+   *  while furniture anchors to a separator wall, so entry is never behind
+   *  furniture. Records the room for verify's enterability asserts and returns
+   *  the door placement for the corridor dressing. */
   const addRoom = (
     room: RoomInterval,
     kind: "facade" | "interior",
+    content: RoomContent,
   ): { doorC: number; bedLow: boolean; xIn0: number; xIn1: number } | null => {
     const wallZ = kind === "facade" ? frontWallZ : intWallZ;
     const zNear = kind === "facade" ? faceIn : intWallZ + inward * (P.wallT / 2);
@@ -211,27 +234,54 @@ export function furnishWardFloor(ctx: WingCtx, f: number): void {
       ...props.wallPanel(doorC, base + 2.45, corrFaceZ, dirToFacing(corrSide), "signRed", 0.5, 0.3),
     );
 
-    // FURNITURE — bed along x, headboard on the separator wall, in the band
-    // away from the door wall; cabinet beside the headboard.
+    // FURNITURE — content-specific cluster, anchored to the SEPARATOR side wall
+    // in the band away from the door (so the door→interior walk stays clear).
+    // The office/kitchen clusters fit inside the bed's proven footprint, so the
+    // enterability flood-fill still clears at least the same free area.
     const bedZ = kind === "facade" ? faceIn + inward * 0.8 : intBackZ - inward * 0.8;
-    blocks.push(...props.bed(bedX, base, bedZ, bedFacing));
-    blocks.push(...props.bedheadPanel(bedX, base, bedZ, bedFacing));
-    blocks.push(...props.bedsideCabinet(bedX, base, bedZ + inward * 0.9, bedFacing));
-    if (kind === "facade" && room.window) {
-      // Drapes flank the window flat on the facade wall — but never in the
-      // door-side band, which is the walking corridor from door to window.
-      for (const dx of [room.window[0] + 0.25, room.window[1] - 0.25]) {
-        const clearOfDoorBand = bedLow ? dx < xIn1 - 1.2 : dx > xIn0 + 1.2;
-        if (dx > xIn0 + 0.3 && dx < xIn1 - 0.3 && clearOfDoorBand) {
-          blocks.push(...props.windowDrape(dx, base, faceIn, dirToFacing(inward)));
+    const facingSep: props.Facing = bedLow ? "-x" : "+x"; // faces back to the separator
+    // Direction from the wall-backed cluster INTO the room (toward the door):
+    // facade rooms open inward toward the corridor, interior rooms the reverse.
+    const intoRoom = kind === "facade" ? inward : -inward;
+    if (content === "patient") {
+      blocks.push(...props.bed(bedX, base, bedZ, bedFacing));
+      blocks.push(...props.bedheadPanel(bedX, base, bedZ, bedFacing));
+      blocks.push(...props.bedsideCabinet(bedX, base, bedZ + inward * 0.9, bedFacing));
+      if (kind === "facade" && room.window) {
+        // Drapes flank the window flat on the facade wall — but never in the
+        // door-side band, which is the walking corridor from door to window.
+        for (const dx of [room.window[0] + 0.25, room.window[1] - 0.25]) {
+          const clearOfDoorBand = bedLow ? dx < xIn1 - 1.2 : dx > xIn0 + 1.2;
+          if (dx > xIn0 + 0.3 && dx < xIn1 - 0.3 && clearOfDoorBand) {
+            blocks.push(...props.windowDrape(dx, base, faceIn, dirToFacing(inward)));
+          }
         }
       }
-    }
-    if (kind === "facade" && room.wide && P.furnish.wardExtras) {
-      blocks.push(...props.ivStand(bedX + (bedLow ? 1.9 : -1.9), base, bedZ, bedFacing));
-      blocks.push(
-        ...props.chair(doorSideX, base, faceIn + inward * 1.05, bedLow ? "-x" : "+x"),
-      );
+      if (kind === "facade" && room.wide && cfg.extras) {
+        blocks.push(...props.ivStand(bedX + (bedLow ? 1.9 : -1.9), base, bedZ, bedFacing));
+        blocks.push(...props.chair(doorSideX, base, faceIn + inward * 1.05, facingSep));
+        // Wall-flat vitals monitor over the bedside cabinet — no floor footprint
+        // (keeps the room's walkable area intact), 1 block.
+        blocks.push(
+          ...props.wallPanel(bedX, base + 1.2, bedZ + inward * 0.9, bedFacing, "accentBlue", 0.42, 0.34),
+        );
+      }
+    } else if (content === "office") {
+      // Desk on the separator (reaches ~1.45 m out); chair seated just past it
+      // facing the desk (floor footprints don't overlap); cabinet deeper along
+      // the same wall.
+      blocks.push(...props.officeDesk(bedX, base, bedZ, bedFacing));
+      blocks.push(...props.chair(bedX + (bedLow ? 2.05 : -2.05), base, bedZ, facingSep));
+      blocks.push(...props.cabinet(bedX, base, bedZ + intoRoom * 1.5, bedFacing));
+    } else {
+      // Kitchen (a facade room; a kitchen may have a window). Counter + fridge
+      // along the separator wall, well spaced; a table off the counter foot in
+      // wide rooms — all wall-hugging so the room stays walkable.
+      blocks.push(...props.counter(bedX, base, bedZ, bedFacing, 1.4));
+      blocks.push(...props.appliance(bedX, base, bedZ + intoRoom * 1.55, bedFacing));
+      if (room.wide) {
+        blocks.push(...props.kitchenTable(bedX + (bedLow ? 1.55 : -1.55), base, bedZ, bedFacing));
+      }
     }
     addFixture([(xIn0 + xIn1) / 2, fy, (zNear + zFar) / 2]);
 
@@ -245,19 +295,26 @@ export function furnishWardFloor(ctx: WingCtx, f: number): void {
       doorWallZ: wallZ,
       windowZ: kind === "facade" ? faceIn : undefined,
       kind,
-      name: `wing_${gx}${gz} f${f} ${kind} @${room.x0.toFixed(0)}`,
+      content,
+      floor: f,
+      name: `wing_${gx}${gz} f${f} ${content} ${kind} @${room.x0.toFixed(0)}`,
     });
     return { doorC, bedLow, xIn0, xIn1 };
   };
 
   const intervals = planRoomIntervals(xMin, xMax);
   let mainRoom: { doorC: number; bedLow: boolean; xIn0: number; xIn1: number } | null = null;
-  for (const room of intervals.slice(0, P.furnish.roomsPerFloor)) {
-    const placed = addRoom(room, "facade");
-    mainRoom = mainRoom ?? placed;
+  const facade = intervals.slice(0, cfg.facadeRooms);
+  for (let i = 0; i < facade.length; i++) {
+    // The building's single kitchen takes the LAST facade room of its
+    // designated wing+floor (facade geometry is the roomy, predictable one);
+    // every other facade room follows cfg.content.
+    const content = cfg.kitchen && i === facade.length - 1 ? "kitchen" : cfg.content;
+    const placed = addRoom(facade[i], "facade", content);
+    if (content !== "kitchen") mainRoom = mainRoom ?? placed;
   }
-  for (const room of intervals.slice(0, P.furnish.interiorRoomsPerFloor)) {
-    addRoom(room, "interior");
+  for (const room of intervals.slice(0, cfg.interiorRooms)) {
+    addRoom(room, "interior", cfg.content);
   }
 
   // CORRIDOR DRESSING — orange handrail bumpers + wall chart on the main
@@ -312,9 +369,45 @@ export function furnishWardFloor(ctx: WingCtx, f: number): void {
   }
 
   const used = blocks.length - before;
-  if (used > P.furnish.budgetPerFloor.ward) {
+  if (used > cfg.budget) {
     throw new Error(
-      `ward furnish budget exceeded: wing_${gx}${gz} floor ${f} used ${used} > ${P.furnish.budgetPerFloor.ward}`,
+      `room furnish budget exceeded: wing_${gx}${gz} floor ${f} (${cfg.content}) used ${used} > ${cfg.budget}`,
     );
+  }
+}
+
+/**
+ * FLOOR 0 — the entrance concourse. The two front-center wings (gx 1/2, gz 2)
+ * that flank the glazed entrance axis get an open reception area rather than
+ * rooms: a reception/nurse desk facing the doors, two waiting bench rows, a
+ * planter and a directory pillar. Everything is freestanding on the deck (so
+ * the per-section support flood-fill releases it with the floor) and kept well
+ * clear of the rib/entrance corridor no-go zones (verify's corridor-intrusion
+ * assert), spaced apart so no two props share a plane.
+ */
+export function furnishEntranceHall(ctx: WingCtx, budget: number): void {
+  const { gx, blocks } = ctx;
+  const before = blocks.length;
+  const base = wallBaseY(0);
+  const east = gx === 2;
+  const cx = east ? 5 : -5; // concourse center in the entrance-side half
+  const sign = east ? 1 : -1;
+
+  // Reception counter (west wing) / nurse station (east wing), facing the doors.
+  if (east) blocks.push(...props.nurseStation(cx, base, -4, "+z"));
+  else blocks.push(...props.receptionDesk(cx, base, -4, "+z", "accentTeal"));
+
+  // Two waiting bench rows deeper into the hall.
+  blocks.push(...props.benchRow(cx, base, -8.4, "+z", "accentBlue"));
+  blocks.push(...props.benchRow(cx, base, -11, "+z", "accentOrange"));
+
+  // Planter near the entrance and a directory pillar (post + hanging sign).
+  blocks.push(...props.plant(cx + sign * 2.6, base, -2.2));
+  blocks.push(block("metal", cx - sign * 2.6, base, -1.7, 0.12, 2.0, 0.12));
+  blocks.push(block("signRed", cx - sign * 2.6, base + 2.0, -1.7, 1.3, 0.5, 0.14));
+
+  const used = blocks.length - before;
+  if (used > budget) {
+    throw new Error(`entrance furnish budget exceeded: wing_${gx}2 used ${used} > ${budget}`);
   }
 }

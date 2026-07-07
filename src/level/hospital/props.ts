@@ -122,6 +122,59 @@ export function wallPanel(
   return [frame(x, z, facing)(mat, 0, bottomY, 0.025, w, h, 0.05)];
 }
 
+/** Office desk — 2 blocks: white pedestal body + a wood top on its own plane
+ *  (overhangs in depth only, so the side faces stay coplanar-clean). */
+export function officeDesk(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("propWhite", 0, floorY, 0.75, 0.95, 0.72, 1.25),
+    put("wood", 0, floorY + 0.72, 0.78, 0.95, 0.06, 1.4),
+  ];
+}
+
+/** Filing / storage cabinet — 1 tall block. */
+export function cabinet(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  return [frame(x, z, facing)("propWhite", 0, floorY, 0.28, 0.9, 1.25, 0.55)];
+}
+
+/** Kitchen counter run — 2 blocks: base cabinets + a steel worktop (stacked,
+ *  y-abutting, so the shared side planes carry zero overlap area). `len` runs
+ *  ALONG the wall. */
+export function counter(
+  x: number,
+  floorY: number,
+  z: number,
+  facing: Facing,
+  len: number,
+): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("propWhite", 0, floorY, 0.3, len, 0.85, 0.6),
+    put("metal", 0, floorY + 0.85, 0.31, len, 0.06, 0.62), // worktop: back flush, 2 cm front lip
+  ];
+}
+
+/** Kitchen appliance box (fridge / oven) — 1 metal block (back flush to the
+ *  wall it stands against, so it never intrudes into the wall). */
+export function appliance(
+  x: number,
+  floorY: number,
+  z: number,
+  facing: Facing,
+  h = 1.75,
+): BlockDef[] {
+  return [frame(x, z, facing)("metal", 0, floorY, 0.35, 0.72, h, 0.66)];
+}
+
+/** Small kitchen/dining table — 2 blocks: leg block + top on its own plane. */
+export function kitchenTable(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("wood", 0, floorY, 0.55, 0.7, 0.72, 1.0),
+    put("wood", 0, floorY + 0.72, 0.55, 0.95, 0.06, 1.3),
+  ];
+}
+
 /** Gurney — 3 blocks: metal underframe, white mattress, pillow. */
 export function gurney(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
   const put = frame(x, z, facing);
