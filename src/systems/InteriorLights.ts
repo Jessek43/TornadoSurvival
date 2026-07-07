@@ -107,6 +107,12 @@ export class InteriorLights {
     }
   }
 
+  /** Is fixture `index` still lit? (Not yet stranded dark.) Used by the debug
+   *  HUD to report per-floor stairwell-light liveness. */
+  isLit(index: number): boolean {
+    return index >= 0 && index < this.dead.length && !this.dead[index];
+  }
+
   /** Debug readout: fixtures still LIT whose enclosure is already gone — the
    *  runtime "no floating lights" number. update() latches stranded fixtures
    *  within a few frames, so this should read 0 whenever it's sampled. */

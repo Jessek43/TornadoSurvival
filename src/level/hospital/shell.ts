@@ -16,6 +16,7 @@ import {
   wallTopY,
   type ExteriorFace,
   type Fixture,
+  type StairLight,
 } from "./params";
 
 /**
@@ -48,6 +49,8 @@ export interface HospitalShell {
   sections: SectionSpec[];
   lightFixtures: Fixture[];
   exteriorFaces: ExteriorFace[];
+  /** Stairwell lights, tagged with their mount (debug HUD readout). */
+  stairLights: StairLight[];
 }
 
 export interface ShellOptions {
@@ -58,7 +61,9 @@ export interface ShellOptions {
   deckMaterial?: (f: number, gx: number, gz: number) => MaterialId;
 }
 
-type AddFixture = (f: Fixture) => void;
+/** Push a ceiling fixture; returns its index in the flat lightFixtures array
+ *  (stable — furnish only appends after the shell). */
+type AddFixture = (f: Fixture) => number;
 
 /** Author a block by its BOTTOM y (easier to stack); store the center.
  *  Exported for the Phase-2 furnish pass (props.ts / archetypes.ts). */
@@ -378,7 +383,12 @@ function buildWing(
 //    correctly reads full exposure up there.
 // ===========================================================================
 
-function buildStairwell(cx: number, side: "A" | "B", addFixture: AddFixture): SectionSpec {
+function buildStairwell(
+  cx: number,
+  side: "A" | "B",
+  addFixture: AddFixture,
+  stairLights: StairLight[],
+): SectionSpec {
   const blocks: BlockDef[] = [];
   const S = P.stairs;
   const H = P.floorHeight;
@@ -425,15 +435,21 @@ function buildStairwell(cx: number, side: "A" | "B", addFixture: AddFixture): Se
     );
   }
 
-  // FIXTURES — one at the BASE of each up-flight (head height over the floor
-  // landing where lane A's flight begins), skipping the bottommost flight.
-  // Mounted 0.35 m off the front shaft wall's inner face: a live fixture
-  // always has that storey's concrete wall (and the landing slab) within
-  // strandRange, so it dies exactly when the shaft storey is torn out —
-  // never floating mid-shaft.
-  const fixtureZ = zFront - P.wallT - 0.35;
+  // FIXTURES — mounted flush under the underside of the arrival LANDING one
+  // storey above (floors ≥ 1; floor 0 stays unlit by design). The old fixtures
+  // floated at head height cantilevered off the front shaft wall — in an open
+  // switchback shaft there is no ceiling there, so they read as hanging in
+  // mid-air. Hung 6 cm under the landing slab above, each light reads as a real
+  // ceiling fixture AND its liveness tracks that landing: anyIntactBlockNear
+  // finds the concrete slab it hangs from (its mount) and the light dies
+  // exactly when that flight/landing is torn out — the same local-enclosure
+  // principle as the earlier floating-lights fix, pointed at the mount
+  // structure rather than a distant durable deck.
+  const mountZ = (runFront + (zFront - P.wallT)) / 2; // z of the arrival landing
   for (let f = 1; f < FLOORS_MAX; f++) {
-    addFixture([cx - S.laneOff, f * H + 2.3, fixtureZ]);
+    const landingBottom = (f + 1) * H - P.deckT; // arrival landing for floor f+1
+    const idx = addFixture([cx - S.laneOff, landingBottom - 0.06, mountZ]);
+    stairLights.push({ fixtureIndex: idx, stair: side, floor: f, mount: `f${f + 1} landing` });
   }
 
   // Shaft walls on 3 sides (open toward the building center), one block per
@@ -456,7 +472,9 @@ function buildStairwell(cx: number, side: "A" | "B", addFixture: AddFixture): Se
   blocks.push(block("concrete", cx, headBase, zFront - P.wallT / 2, 2 * S.hw, 2.2, P.wallT));
   blocks.push(block("concrete", farX, headBase, P.spineZ, P.wallT, 2.2, 2 * S.hd - 2 * P.wallT));
   blocks.push(block("cladding", cx, headBase + 2.2, P.spineZ, 2 * S.hw, 0.24, 2 * S.hd));
-  addFixture([cx - S.laneOff, headBase + 1.9, fixtureZ]);
+  // Roof-access head light: flush under the head's own roof slab (its mount).
+  const headIdx = addFixture([cx - S.laneOff, headBase + 2.2 - 0.06, P.spineZ]);
+  stairLights.push({ fixtureIndex: headIdx, stair: side, floor: FLOORS_MAX, mount: "head roof" });
   return { name: `stair_${side}`, blocks };
 }
 
@@ -537,15 +555,16 @@ export function buildShell(opts: ShellOptions = {}): HospitalShell {
   const sections: SectionSpec[] = [];
   const lightFixtures: Fixture[] = [];
   const exteriorFaces: ExteriorFace[] = [];
-  const addFixture: AddFixture = (f) => lightFixtures.push(f);
+  const stairLights: StairLight[] = [];
+  const addFixture: AddFixture = (f) => lightFixtures.push(f) - 1;
 
   for (let gx = 0; gx < COLS; gx++) {
     for (let gz = 0; gz < P.rows; gz++) {
       sections.push(buildWing(gx, gz, addFixture, exteriorFaces, opts));
     }
   }
-  sections.push(buildStairwell(P.stairs.xs[0], "A", addFixture));
-  sections.push(buildStairwell(P.stairs.xs[1], "B", addFixture));
+  sections.push(buildStairwell(P.stairs.xs[0], "A", addFixture, stairLights));
+  sections.push(buildStairwell(P.stairs.xs[1], "B", addFixture, stairLights));
   sections.push(buildPortico());
   sections.push(buildAmbulanceBay());
 
@@ -576,5 +595,5 @@ export function buildShell(opts: ShellOptions = {}): HospitalShell {
     sections.push(buildBarrier(bx, 6.2));
   }
 
-  return { sections, lightFixtures, exteriorFaces };
+  return { sections, lightFixtures, exteriorFaces, stairLights };
 }

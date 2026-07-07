@@ -8,6 +8,7 @@ import type { PlayerController } from "../systems/PlayerController";
 import type { StructureSystem } from "../systems/StructureSystem";
 import type { DebrisManager } from "../systems/DebrisManager";
 import type { InteriorLights } from "../systems/InteriorLights";
+import type { StairLight } from "../level/hospital/params";
 
 const PATH_CAPACITY = 2000; // ≈10 min of breadcrumbs at 0.3 s intervals
 
@@ -26,6 +27,9 @@ export class DebugTools {
   }
 
   private readonly label: HTMLDivElement;
+  /** Second panel below the FPS line for the section-specific readouts
+   *  (stairwell-light mounts §1, ground-gap ray §2, last fall damage §3). */
+  private readonly levelLabel: HTMLDivElement;
   private smoothedFps = 60;
 
   private readonly windArrow: THREE.ArrowHelper;
@@ -52,12 +56,19 @@ export class DebugTools {
     private readonly debris: DebrisManager,
     private readonly interiorLights: InteriorLights,
     private readonly renderer: THREE.WebGLRenderer,
+    private readonly stairLights: StairLight[],
   ) {
     this.label = document.createElement("div");
     this.label.style.cssText =
       "position:absolute;top:8px;left:8px;color:#9f9;font:12px monospace;" +
       "background:rgba(0,0,0,.5);padding:2px 6px;border-radius:3px;";
     uiRoot.appendChild(this.label);
+
+    this.levelLabel = document.createElement("div");
+    this.levelLabel.style.cssText =
+      "position:absolute;top:32px;left:8px;max-width:96vw;color:#9cf;font:11px monospace;" +
+      "white-space:pre;overflow-x:auto;background:rgba(0,0,0,.5);padding:2px 6px;border-radius:3px;";
+    uiRoot.appendChild(this.levelLabel);
 
     this.windArrow = new THREE.ArrowHelper(
       new THREE.Vector3(1, 0, 0),
@@ -160,5 +171,24 @@ export class DebugTools {
       attr.needsUpdate = true;
       this.pathLine.geometry.setDrawRange(0, this.pathCount);
     }
+
+    // Section readouts (stairwell-light mounts §1 / ground gap §2 / fall dmg §3).
+    this.levelLabel.textContent = this.stairReadout();
+  }
+
+  /** §1 — per-floor stairwell-light mount target + current live state, per
+   *  stair. Reads live: a floor's light should read ✓ until its flight/landing
+   *  is torn out, then ✗ (never lingering lit in mid-air). */
+  private stairReadout(): string {
+    const lines: string[] = [];
+    for (const stair of ["A", "B"] as const) {
+      const cells = this.stairLights
+        .filter((l) => l.stair === stair)
+        .map(
+          (l) => `f${l.floor}·${l.mount}${this.interiorLights.isLit(l.fixtureIndex) ? "✓" : "✗"}`,
+        );
+      lines.push(`stair ${stair}: ${cells.join("  ")}`);
+    }
+    return lines.join("\n");
   }
 }

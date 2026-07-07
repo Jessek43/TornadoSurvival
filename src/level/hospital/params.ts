@@ -182,6 +182,24 @@ export function wallTopY(f: number): number {
 export type Fixture = [number, number, number];
 
 /**
+ * A stairwell ceiling light, tagged with what it is mounted under. Unlike the
+ * anonymous corridor/room fixtures, these carry enough metadata for the debug
+ * HUD to report, per floor, WHICH flight/landing each light hangs from and
+ * whether it is still lit — the readout behind the "lights track the flight
+ * above, not a distant deck" fix. `fixtureIndex` points into the flat
+ * lightFixtures array (furnish only ever APPENDS after the stairs, so the
+ * index stays valid), so InteriorLights.isLit(fixtureIndex) is its live state.
+ */
+export interface StairLight {
+  fixtureIndex: number;
+  stair: "A" | "B";
+  /** Storey the light serves (its landing sits one floor below the mount). */
+  floor: number;
+  /** Human-readable mount target, e.g. "f3 landing" or "head roof". */
+  mount: string;
+}
+
+/**
  * One furnished room, recorded by the furnish pass. verify.ts turns
  * ENTERABILITY into a build-time invariant with these: the door volume must
  * be empty, and a capsule-inflated flood-fill from the door must reach a

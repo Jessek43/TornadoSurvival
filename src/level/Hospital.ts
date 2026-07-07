@@ -2,7 +2,7 @@ import type { SectionSpec } from "./Blueprints";
 import { buildShell } from "./hospital/shell";
 import { furnish, DECK_PALETTE } from "./hospital/furnish";
 import { verifyHospital } from "./hospital/verify";
-import type { Fixture } from "./hospital/params";
+import type { Fixture, StairLight } from "./hospital/params";
 
 /**
  * The hospital level — a thin facade over the parametric builder in
@@ -27,6 +27,7 @@ import type { Fixture } from "./hospital/params";
 export function buildHospital(opts: { detail?: boolean } = {}): {
   sections: SectionSpec[];
   lightFixtures: Fixture[];
+  stairLights: StairLight[];
 } {
   const shell = buildShell(opts.detail ? { deckMaterial: DECK_PALETTE } : {});
   const furnished = opts.detail ? furnish(shell) : undefined;
@@ -46,5 +47,9 @@ export function buildHospital(opts: { detail?: boolean } = {}): {
     }
   }
 
-  return { sections: shell.sections, lightFixtures: shell.lightFixtures };
+  return {
+    sections: shell.sections,
+    lightFixtures: shell.lightFixtures,
+    stairLights: shell.stairLights,
+  };
 }

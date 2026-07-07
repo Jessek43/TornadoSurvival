@@ -173,6 +173,7 @@ export class Game {
           this.debris,
           this.interiorLights,
           this.renderer,
+          hospital.stairLights,
         )
       : null;
   }
