@@ -45,6 +45,13 @@ export class PlayerController {
   lastFallSpeed = 0;
   lastFallDamage = 0;
 
+  /** §1 traversal readout — the last fixed step's INTENDED vs ACHIEVED
+   *  horizontal displacement (m). When grounded & moving & not gripping but
+   *  intended ≫ achieved, a step/wall is blocking the player: this is the
+   *  live "the doorstep blocks me" number the ?debug HUD reads in-browser. */
+  dbgIntendedHoriz = 0;
+  dbgAchievedHoriz = 0;
+
   readonly body: RAPIER.RigidBody;
   readonly collider: RAPIER.Collider;
   readonly mesh: THREE.Mesh;
@@ -148,17 +155,17 @@ export class PlayerController {
         `factor ${p.impactDamageFactor} hp per m/s · now (dedicated on-foot): ` +
         `safe ${p.fallSafeSpeed} m/s, factor ${p.fallDamageFactor} hp per m/s`,
     );
-    // §1 traversal readout: the numbers behind the doorstep/stair fix. Autostep
-    // (0.5) already cleared both the 0.18 m porch doorstep and the house stair,
-    // so the fix was NOT raising it — it was snap-to-ground 0.3→0.45 (now ≥ the
-    // house stair rise) plus dropping that rise 0.40→0.35 for autostep margin.
-    // House stairwell ceiling (2.56 m under the 2.8 m storey's floor slab) vs
-    // the 1.8 m capsule → 0.76 m standing headroom; the gentler rise widens the
-    // tightest stair-transition clearance too.
+    // §1 traversal readout — the numbers to reconcile against the in-browser
+    // ?debug line. Movement goes through this.controller.computeColliderMovement
+    // (below), so autostep/snap actually apply. Static geometry probe
+    // (scripts/_diag-house): worst doorstep step 0.18 m (< 0.50 autostep) and
+    // tightest stair-climb head clearance 0.41 m (≥ 0.30 target, on the first
+    // tread under the solid rear deck). If the in-browser readout shows the
+    // player blocked (intended ≫ achieved) or headroom < 0, capture THAT number.
     console.info(
-      `[traversal] autostep maxStep 0.50 m, snapToGround 0.30→0.45 m, capsule ${p.height} m · ` +
-        `doorstep 0.18 m & house stair rise 0.40→0.35 m (both < autostep) · ` +
-        `house stairwell ceiling 2.56 m vs capsule ${p.height} m`,
+      `[traversal] pipeline = KinematicCharacterController.computeColliderMovement · ` +
+        `autostep(maxStep 0.50 m, minWidth 0.20 m, dynamic) · snapToGround 0.45 m · capsule ${p.height} m · ` +
+        `measured: doorstep 0.18 m < 0.50 ✓ · min stair head clearance 0.41 m ≥ 0.30 ✓`,
     );
   }
 
@@ -176,6 +183,20 @@ export class PlayerController {
 
   get isRagdoll(): boolean {
     return this.state === "ragdoll";
+  }
+
+  /** §1 traversal readout: is the controller reporting ground contact? */
+  get isGrounded(): boolean {
+    return this.grounded;
+  }
+
+  /** §1 traversal readout: capsule bottom (feet) and top (crown) world Y — the
+   *  numbers behind "the doorstep top vs my feet" and "my crown vs the ceiling". */
+  get capsuleBottomY(): number {
+    return this.body.translation().y - GameConfig.player.height / 2;
+  }
+  get capsuleTopY(): number {
+    return this.body.translation().y + this.appliedCapsuleH - GameConfig.player.height / 2;
   }
 
   /** Collider that debris contact-events should hurt; -1 while ragdolled
@@ -352,6 +373,11 @@ export class PlayerController {
       z: this.velocity.z * dt,
     });
     const moved = this.controller.computedMovement();
+    // §1 traversal probe: how much of the intended horizontal move actually
+    // happened this step. A doorstep/ledge the autostep can't clear shows up as
+    // achieved ≈ 0 while intended > 0 (read live in the ?debug traversal line).
+    this.dbgIntendedHoriz = Math.hypot(this.velocity.x, this.velocity.z) * dt;
+    this.dbgAchievedHoriz = Math.hypot(moved.x, moved.z);
     const t = this.body.translation();
     this.body.setNextKinematicTranslation({
       x: t.x + moved.x,

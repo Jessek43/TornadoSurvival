@@ -49,6 +49,11 @@ export class DebugTools {
   private readonly arrowOrigin = new THREE.Vector3();
   /** Reused downward ray for the §2 ground-gap probe (no per-frame alloc). */
   private readonly downRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+  /** Reused upward ray for the §1 head-clearance probe. */
+  private readonly upRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
+  /** Running minimum head clearance while grounded — the "do I clip the stair
+   *  ceiling" number; reset when airborne so a jump doesn't skew it. */
+  private minHeadroom = Infinity;
 
   constructor(
     uiRoot: HTMLElement,
@@ -184,6 +189,7 @@ export class DebugTools {
 
     // Section readouts (stairwell-light mounts §1 / ground gap §2 / fall dmg §3).
     this.levelLabel.textContent = [
+      this.traversalReadout(),
       this.stairReadout(),
       this.tornadoReadout(),
       this.groundGapReadout(),
@@ -233,6 +239,43 @@ export class DebugTools {
     );
     const gap = hit ? Math.max(hit.timeOfImpact - 0.1, 0) : Infinity;
     return `ground below feet: ${gap === Infinity ? ">60" : gap.toFixed(2)} m (spikes over a gap)`;
+  }
+
+  /** §1 — house/hospital TRAVERSAL probe. Reports whether the player is being
+   *  blocked (intended horizontal move ≫ achieved while grounded → a doorstep/
+   *  ledge the autostep can't clear) and the live head clearance to the ceiling
+   *  above the crown (ray up, excluding the player). Walk into a house door and
+   *  up the stairs: "blocked" should stay low and "head" should stay positive
+   *  (min tracks the tightest point of the climb). */
+  private traversalReadout(): string {
+    const p = this.player;
+    const intended = p.dbgIntendedHoriz;
+    const achieved = p.dbgAchievedHoriz;
+    const blocked = intended > 1e-4 ? Math.max(0, 1 - achieved / intended) : 0;
+    const stuck = p.isGrounded && intended > 0.005 && blocked > 0.6;
+
+    // Head clearance: cast up from just below the crown to the first solid.
+    this.upRay.origin.x = this.player.position.x;
+    this.upRay.origin.y = p.capsuleTopY - 0.05;
+    this.upRay.origin.z = this.player.position.z;
+    const hit = this.physics.world.castRay(
+      this.upRay,
+      6,
+      true,
+      undefined,
+      undefined,
+      this.player.collider,
+    );
+    const head = hit ? Math.max(hit.timeOfImpact - 0.05, 0) : Infinity;
+    if (p.isGrounded && head !== Infinity) this.minHeadroom = Math.min(this.minHeadroom, head);
+    else if (!p.isGrounded) this.minHeadroom = Infinity; // airborne — restart the run
+    const headStr = head === Infinity ? ">6" : head.toFixed(2);
+    const minStr = this.minHeadroom === Infinity ? "-" : this.minHeadroom.toFixed(2);
+    return (
+      `§1 traversal: ${p.isGrounded ? "grounded" : "air"} · feet ${p.capsuleBottomY.toFixed(2)} crown ${p.capsuleTopY.toFixed(2)}` +
+      ` · move want ${intended.toFixed(3)}/${achieved.toFixed(3)}m ${stuck ? "BLOCKED✗" : "ok"}` +
+      ` · head ${headStr}m (min ${minStr}m)`
+    );
   }
 
   /** §1 — per-floor stairwell-light mount target + current live state, per

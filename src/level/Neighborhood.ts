@@ -233,8 +233,11 @@ function buildHouse(
     ry += 0.34;
   }
 
-  // Front porch: slab + two thin posts flanking the door.
-  put("wood", 0, 0, HD + 0.9, 3, 0.18, 1.8);
+  // Front porch: a near-flush threshold slab (§1 — was a 0.18 m raised lip that
+  // the player reported having to jump; dropped to a 0.06 m pad so the door is a
+  // flush step-through and entry never depends on the autostep clearing a lip)
+  // + two thin posts flanking the door.
+  put("wood", 0, 0, HD + 0.9, 3, 0.06, 1.8);
   put("wood", -1.2, 0, HD + 1.6, 0.18, 2.3, 0.18);
   put("wood", 1.2, 0, HD + 1.6, 0.18, 2.3, 0.18);
   put("wood", 0, 2.3, HD + 1.0, 3.2, 0.16, 2.2); // porch roof
