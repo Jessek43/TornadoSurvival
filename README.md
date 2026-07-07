@@ -30,7 +30,10 @@ Requires a recent Node (18+) and a WebGL2-capable browser.
 | **WASD** | Move |
 | **Mouse** | Look |
 | **Space** | Jump |
-| **Shift / E** | Hold on to nearby structure in high wind (drains grip stamina) |
+| **Shift** | Sprint |
+| **Ctrl / C** | Crouch |
+| **F** | Toggle flashlight |
+| **E** | Hold on to nearby structure in high wind (drains grip stamina) |
 | **R** | Restart the round |
 
 Bars in the corner show **Health** and **Grip** (stamina). Shelter inside the hospital: an intact roof + windward wall shields you from the wind, but the storm tears the shell open over time.

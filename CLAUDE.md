@@ -31,9 +31,11 @@ There is **no test suite** and no linter beyond `tsc`. `tsconfig` is strict with
 ## Current status
 
 - **Game loop:** rounds (2–3 passes, gaps, warning → passes → result) ✅ · restart ✅ · win / "survived" result ✅. **Not yet:** main menu; a confirmed explicit lose/death result path.
+- **Player toolkit:** move / look / jump ✅ · **sprint** (Shift — drains the SPRINT stamina bar, regens while walking) ✅ · **crouch** (Ctrl / C — really shrinks the capsule, bottom-pinned so only the head drops) ✅ · **flashlight** (F — camera-mounted spot, [`Flashlight.ts`](src/systems/Flashlight.ts)) ✅. Grip / hold-on is now **E only** (Shift moved to sprint); wind stagger, grip stamina and the ragdoll fling are unchanged.
 - **Hospital rebuild:** live. Phase 1 (shell) gated in ✅ · Phase 2 (ward detailing) in progress — rooms enterable, interior fit-out ongoing.
+- **Exterior detail:** streets / sidewalks / lot carry procedural **asphalt + concrete-slab** textures ([`GroundTextures.ts`](src/level/GroundTextures.ts)); the ambulance-bay **ambulance** is a detailed white Type-III rig (existing materials only — no new draw call).
 - **Performance:** ~165 fps on dev desktop + laptop — comfortable headroom over the 60 fps target. Mobile / low-end not yet verified; quality-preset selection path not built.
-- **Atmosphere:** still dark / green-tinted; de-haze pass pending.
+- **Atmosphere:** still dark / green-tinted; de-haze pass pending (the new ground textures were kept muted to respect the storm mood).
 
 ## Known issues
 
@@ -56,6 +58,15 @@ The world is a list of `SectionSpec`s (wings, houses, trees, props) turned into 
 - feeds the capped [`DebrisManager`](src/systems/DebrisManager.ts) pool when blocks break.
 
 `block.released` is **monotonic** and is never set by `sleep()`/`wake()` — it means genuine destruction. Use it (not section state) whenever you need "is this geometry actually gone." Interior lights key off this indirectly via **local enclosure**: a fixture is extinguished when `anyIntactBlockNear(pos, strandRange)` finds nothing — the room is gone — which is robust to *which* block survives and is retained through a mere re-sleep.
+
+## Two texture paths (don't cross them)
+
+Surfaces are procedural — **no image files**. There are two separate paths; pick by what you're texturing:
+
+- **Instanced blocks** (walls, props, cars, the ambulance): [`BlockTextures.ts`](src/systems/BlockTextures.ts) patches each shared per-material `MeshStandardMaterial` to sample a near-white detail canvas in **world space** (triplanar on the dominant normal axis), so one small texture tiles at uniform density across every block size while the per-instance tint still drives hue. New block look = a `PAINTERS` entry keyed by `MaterialId`.
+- **Flat ground paint** (streets, sidewalks, parking lot): [`GroundTextures.ts`](src/level/GroundTextures.ts) builds full-color **UV-mapped** asphalt / concrete materials (albedo + bump) for the plain `PlaneGeometry` planes in [`Level.ts`](src/level/Level.ts); each `StreetPatch.surface` (in [`Neighborhood.ts`](src/level/Neighborhood.ts)) picks the texture and the repeat is derived from the plane's size. New ground surface = a painter + a `GroundSurface` case.
+
+Don't route ground planes through the block triplanar shader, or blocks through the UV ground path.
 
 ## Performance is a feature — don't regress it
 

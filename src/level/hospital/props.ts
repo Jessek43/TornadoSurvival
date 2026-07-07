@@ -201,15 +201,47 @@ export function featureWall(x: number, floorY: number, z: number, facing: Facing
   ];
 }
 
-/** Ambulance — 5 blocks: chassis, cab, white box, red stripe + beacon. */
+/**
+ * Ambulance — 18 blocks: a white Type-III box rig (Ford E-series read from the
+ * reference). A tall white box module behind a lower windowed cab, on four
+ * wheels with a grey rocker/chassis + bumpers, an emergency light bar (red /
+ * amber / blue) on the box roof, and twin blue-over-orange side stripes.
+ *
+ * Reuses only existing materials — propWhite (body), metal (chassis, wheels,
+ * bumpers, cab glazing), signRed/accentOrange/accentBlue (lights + stripes) —
+ * so it adds no draw call and stays out of the perimeter-glass registry (no
+ * `glass`: verify.ts would flag a windshield off the hospital envelope). Every
+ * block chains to a ground-touching wheel and no two same-facing faces are
+ * coplanar, so it passes the shell invariants like any other prop.
+ */
 export function ambulance(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
   const put = frame(x, z, facing);
+  const y = floorY;
   return [
-    put("car", 0, floorY, 2.4, 2.0, 0.7, 4.8),
-    put("car", 0, floorY + 0.7, 4.0, 1.9, 1.2, 1.4),
-    put("propWhite", 0, floorY + 0.7, 1.6, 1.95, 1.7, 3.0),
-    put("signRed", 0.995, floorY + 1.5, 1.6, 0.04, 0.25, 3.0), // side stripe abutting the box
-    put("signRed", 0, floorY + 2.4, 1.6, 0.5, 0.15, 0.4), // roof beacon
+    // Wheels (ground anchors) — rear + front axle, both sides.
+    put("metal", -0.82, y, 0.85, 0.42, 0.55, 0.75),
+    put("metal", 0.82, y, 0.85, 0.42, 0.55, 0.75),
+    put("metal", -0.82, y, 3.6, 0.42, 0.55, 0.75),
+    put("metal", 0.82, y, 3.6, 0.42, 0.55, 0.75),
+    // Grey rocker / chassis skirt spanning the wheelbase (rests on the wheels).
+    put("metal", 0, y + 0.38, 2.35, 1.78, 0.4, 4.4),
+    // White box module (rear) + lower windowed cab (front).
+    put("propWhite", 0, y + 0.55, 1.5, 1.86, 2.0, 3.0),
+    put("propWhite", 0, y + 0.55, 3.825, 1.7, 0.7, 1.65),
+    put("metal", 0, y + 1.25, 3.95, 1.6, 0.62, 1.3), // cab greenhouse (glazing)
+    // Bumpers.
+    put("metal", 0, y + 0.25, 4.7, 1.6, 0.55, 0.35), // front
+    put("metal", 0, y + 0.25, -0.13, 1.6, 0.55, 0.35), // rear
+    // Roof light bar: dark base + red / amber / blue lamps across it.
+    put("metal", 0, y + 2.55, 2.6, 1.7, 0.08, 0.45),
+    put("signRed", -0.52, y + 2.63, 2.6, 0.5, 0.14, 0.4),
+    put("accentOrange", 0, y + 2.63, 2.6, 0.5, 0.14, 0.4),
+    put("accentBlue", 0.52, y + 2.63, 2.6, 0.5, 0.14, 0.4),
+    // Twin side stripes (blue over orange) abutting each box flank.
+    put("accentBlue", 0.945, y + 1.7, 1.5, 0.03, 0.18, 3.0),
+    put("accentBlue", -0.945, y + 1.7, 1.5, 0.03, 0.18, 3.0),
+    put("accentOrange", 0.945, y + 1.48, 1.5, 0.03, 0.16, 3.0),
+    put("accentOrange", -0.945, y + 1.48, 1.5, 0.03, 0.16, 3.0),
   ];
 }
 

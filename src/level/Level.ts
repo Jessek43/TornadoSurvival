@@ -3,6 +3,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { GameConfig } from "../config/GameConfig";
 import type { Physics } from "../core/Physics";
 import { STREET_PATCHES } from "./Neighborhood";
+import { makeGroundMaterial, type GroundSurface } from "./GroundTextures";
 
 /**
  * The level's static base: ground plane, ground collider, and the flat
@@ -26,14 +27,15 @@ export class Level {
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // Parking-lot asphalt patch in front of the hospital entrance — a darker
-    // slab so the transition zone (exposed lot → sheltered building) reads.
-    this.addPatch(scene, 0, 10, 58, 20, 0x1f2120, 0.02);
+    // Parking-lot asphalt patch in front of the hospital entrance — the same
+    // worn-asphalt texture as the streets, so the transition zone (exposed lot
+    // → sheltered building) reads as one continuous surface.
+    this.addPatch(scene, 0, 10, 58, 20, 0x1f2120, 0.02, "asphalt");
 
     // Streets + sidewalks (layout owned by Neighborhood.ts so the houses and
     // trees line up with the paint).
     for (const p of STREET_PATCHES) {
-      this.addPatch(scene, p.x, p.z, p.w, p.d, p.color, p.y);
+      this.addPatch(scene, p.x, p.z, p.w, p.d, p.color, p.y, p.surface);
     }
 
     // Physical ground — a thick static slab whose top face is y = 0.
@@ -43,7 +45,12 @@ export class Level {
     physics.world.createCollider(RAPIER.ColliderDesc.cuboid(size / 2, 0.5, size / 2), body);
   }
 
-  /** One flat ground-paint rectangle, floated slightly to avoid z-fighting. */
+  /**
+   * One flat ground-paint rectangle, floated slightly to avoid z-fighting.
+   * With a `surface`, it takes the tiled procedural asphalt/concrete texture
+   * (GroundTextures); without, it falls back to the old flat color (used for
+   * any untextured accent paint).
+   */
   private addPatch(
     scene: THREE.Scene,
     x: number,
@@ -52,11 +59,12 @@ export class Level {
     d: number,
     color: number,
     y: number,
+    surface?: GroundSurface,
   ): void {
-    const patch = new THREE.Mesh(
-      new THREE.PlaneGeometry(w, d),
-      new THREE.MeshStandardMaterial({ color, roughness: 1 }),
-    );
+    const material = surface
+      ? makeGroundMaterial(surface, w, d)
+      : new THREE.MeshStandardMaterial({ color, roughness: 1 });
+    const patch = new THREE.Mesh(new THREE.PlaneGeometry(w, d), material);
     patch.rotation.x = -Math.PI / 2;
     patch.position.set(x, y, z);
     patch.receiveShadow = true;

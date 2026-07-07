@@ -6,6 +6,7 @@
 export class HUD {
   private readonly healthFill: HTMLDivElement;
   private readonly staminaFill: HTMLDivElement;
+  private readonly sprintFill: HTMLDivElement;
   private readonly prompt: HTMLDivElement;
 
   constructor(uiRoot: HTMLElement) {
@@ -16,6 +17,7 @@ export class HUD {
     uiRoot.appendChild(bars);
     this.healthFill = makeBar(bars, "HEALTH", "#a83a2e");
     this.staminaFill = makeBar(bars, "GRIP", "#c9a13b");
+    this.sprintFill = makeBar(bars, "SPRINT", "#6ab04c");
 
     const crosshair = document.createElement("div");
     crosshair.style.cssText =
@@ -30,13 +32,15 @@ export class HUD {
       "font:14px system-ui;text-align:center;line-height:1.7;";
     this.prompt.innerHTML =
       "<b>Click to play</b><br>WASD move · mouse look · Space jump<br>" +
-      "Shift / E hold on in wind · R restart";
+      "Shift sprint · Ctrl crouch · F flashlight<br>" +
+      "E hold on in wind · R restart";
     uiRoot.appendChild(this.prompt);
   }
 
-  update(health: number, stamina: number, showPrompt: boolean): void {
+  update(health: number, grip: number, sprint: number, showPrompt: boolean): void {
     this.healthFill.style.width = `${Math.max(health, 0)}%`;
-    this.staminaFill.style.width = `${Math.max(stamina, 0)}%`;
+    this.staminaFill.style.width = `${Math.max(grip, 0)}%`;
+    this.sprintFill.style.width = `${Math.max(sprint, 0)}%`;
     this.prompt.style.display = showPrompt ? "block" : "none";
   }
 }

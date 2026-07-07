@@ -33,6 +33,17 @@ export const GameConfig = {
     eyeHeight: 1.65, // camera height above the feet
 
     walkSpeed: 5.5, // m/s
+    sprintMultiplier: 1.6, // × walkSpeed while sprinting (hold Shift)
+    crouchMultiplier: 0.5, // × walkSpeed while crouched (hold Ctrl / C)
+    crouchHeight: 1.1, // capsule TOTAL height while fully crouched (m) — the
+    // collider really shrinks to this (bottom pinned to the standing foot line),
+    // so you fit under lower gaps; must stay > 2×radius so the capsule is valid.
+    crouchEyeHeight: 0.95, // camera height above the feet while fully crouched (m)
+    crouchLerp: 14, // 1/s — how fast the view dips into / rises out of a crouch
+    // --- sprint stamina (HUD "SPRINT" bar) ---
+    sprintDrain: 0.2, // /s while sprinting → a full bar ≈ 5 s of running
+    sprintRegen: 0.28, // /s recovered while walking / standing
+    sprintRecoverThreshold: 0.2, // after emptying, must refill this far before sprint re-enables
     climbSpeed: 3, // m/s up/down a ladder
     jumpSpeed: 4.8, // m/s upward → apex ≈ v²/2g ≈ 1.2 m
     // Jump input is buffered (captured every rendered frame) and consumed on
@@ -95,6 +106,19 @@ export const GameConfig = {
     chaseDistance: 6.5, // m behind the flung body
     chaseHeight: 3, // m above it
     chaseLerp: 4, // 1/s spring toward the desired chase position
+  },
+
+  // Player flashlight (systems/Flashlight.ts) — a head-mounted spot toggled
+  // with F, glued to the view each frame. No shadow map (a shadow-casting spot
+  // is a whole extra depth pass); these are the live-tunable beam knobs for the
+  // ?debug panel. Units match the PBR point lights used by InteriorLights.
+  flashlight: {
+    color: 0xfff1d6, // warm white
+    intensity: 105, // luminous intensity when on (0 = off) — a modest beam
+    distance: 48, // m — beam cutoff
+    angle: 0.34, // rad — half-cone (~19°): a tighter, focused band
+    penumbra: 0.45, // soft cone edge
+    decay: 1.1, // distance falloff exponent
   },
 
   wind: {

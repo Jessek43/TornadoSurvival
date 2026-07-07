@@ -37,6 +37,9 @@ export interface StreetPatch {
   w: number;
   d: number;
   color: number;
+  /** Which tiled procedural texture Level paints this patch with (asphalt for
+   *  the carriageway, concrete slabs for the sidewalk strips). */
+  surface: "asphalt" | "sidewalk";
   /** Render height above the ground plane. Distinct layers keep overlapping
    *  paint from sharing a plane: the N–S cross streets pass OVER the E–W main
    *  street and its sidewalks, so they sit a hair higher and the depth buffer
@@ -54,13 +57,13 @@ const Y_CROSS = 0.045; // cross streets, drawn above where they cross the main s
 /** Flat ground-paint rectangles for the streets + sidewalks (Level draws these). */
 export const STREET_PATCHES: StreetPatch[] = [
   // Main street + its two sidewalk strips.
-  { x: 0, z: MAIN_Z, w: 150, d: STREET_W, color: ASPHALT, y: Y_STREET },
-  { x: 0, z: MAIN_Z - STREET_W / 2 - 0.9, w: 150, d: 1.8, color: SIDEWALK, y: Y_STREET },
-  { x: 0, z: MAIN_Z + STREET_W / 2 + 0.9, w: 150, d: 1.0, color: SIDEWALK, y: Y_STREET },
+  { x: 0, z: MAIN_Z, w: 150, d: STREET_W, color: ASPHALT, surface: "asphalt", y: Y_STREET },
+  { x: 0, z: MAIN_Z - STREET_W / 2 - 0.9, w: 150, d: 1.8, color: SIDEWALK, surface: "sidewalk", y: Y_STREET },
+  { x: 0, z: MAIN_Z + STREET_W / 2 + 0.9, w: 150, d: 1.0, color: SIDEWALK, surface: "sidewalk", y: Y_STREET },
   // Cross streets (run from behind the houses down past the hospital); layered
   // above the main street so the crossing overlaps order cleanly, not z-fight.
-  { x: -CROSS_X, z: -14, w: STREET_W, d: 90, color: ASPHALT, y: Y_CROSS },
-  { x: CROSS_X, z: -14, w: STREET_W, d: 90, color: ASPHALT, y: Y_CROSS },
+  { x: -CROSS_X, z: -14, w: STREET_W, d: 90, color: ASPHALT, surface: "asphalt", y: Y_CROSS },
+  { x: CROSS_X, z: -14, w: STREET_W, d: 90, color: ASPHALT, surface: "asphalt", y: Y_CROSS },
 ];
 
 /** Author a block by its BOTTOM y (same helper style as Hospital.ts). */

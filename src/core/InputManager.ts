@@ -16,11 +16,24 @@ export interface InputState {
   lookY: number;
   /** True only on the frame the key went down (edge-triggered). */
   jumpPressed: boolean;
-  /** True while the grip key is held. */
+  /** True while the grip key (E) is held. */
   gripHeld: boolean;
+  /** True while sprint (Shift) is held. */
+  sprintHeld: boolean;
+  /** True while crouch (Ctrl / C) is held. */
+  crouchHeld: boolean;
+  /** True only on the frame the flashlight toggle (F) was pressed. */
+  flashlightPressed: boolean;
   /** True only on the frame restart was pressed. */
   restartPressed: boolean;
 }
+
+/** Keys the game owns — default-prevented while the pointer is locked so
+ *  browser chords (Ctrl+S save, Ctrl+W close, Space scroll) don't fire mid-play. */
+const GAME_KEYS = new Set([
+  "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "KeyE", "KeyF", "KeyR", "Space",
+  "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight",
+]);
 
 export class InputManager {
   private readonly keys = new Set<string>();
@@ -28,14 +41,19 @@ export class InputManager {
   private lookY = 0;
   private jumpQueued = false;
   private restartQueued = false;
+  private flashlightQueued = false;
   private pointerLocked = false;
 
   constructor(canvas: HTMLCanvasElement) {
     window.addEventListener("keydown", (e) => {
+      // Suppress the browser's own use of our keys during play (Ctrl-chords,
+      // Space page-scroll). Only while locked, so devtools/refresh work in menus.
+      if (this.pointerLocked && GAME_KEYS.has(e.code)) e.preventDefault();
       if (e.repeat) return;
       this.keys.add(e.code);
       if (e.code === "Space") this.jumpQueued = true;
       if (e.code === "KeyR") this.restartQueued = true;
+      if (e.code === "KeyF") this.flashlightQueued = true;
     });
     window.addEventListener("keyup", (e) => this.keys.delete(e.code));
 
@@ -68,7 +86,11 @@ export class InputManager {
       lookX: this.lookX,
       lookY: this.lookY,
       jumpPressed: this.jumpQueued,
-      gripHeld: this.keys.has("ShiftLeft") || this.keys.has("KeyE"),
+      gripHeld: this.keys.has("KeyE"),
+      sprintHeld: this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"),
+      crouchHeld:
+        this.keys.has("ControlLeft") || this.keys.has("ControlRight") || this.keys.has("KeyC"),
+      flashlightPressed: this.flashlightQueued,
       restartPressed: this.restartQueued,
     };
 
@@ -83,6 +105,7 @@ export class InputManager {
     this.lookY = 0;
     this.jumpQueued = false;
     this.restartQueued = false;
+    this.flashlightQueued = false;
     return state;
   }
 }

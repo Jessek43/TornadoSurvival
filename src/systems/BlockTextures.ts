@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { MATERIALS, type BlockMaterialDef, type MaterialId } from "../level/Materials";
+import { type MaterialId } from "../level/Materials";
 
 /**
  * Procedural surface detail for the block world — no asset files, no new
@@ -173,6 +173,7 @@ export function getBlockTexture(id: MaterialId): THREE.CanvasTexture | null {
   const ctx = canvas.getContext("2d")!;
   ctx.fillStyle = "#f2f2f2"; // near-white base: per-instance colors keep the hue
   ctx.fillRect(0, 0, TEX_SIZE, TEX_SIZE);
+  reseed(id); // per-texture seed → speckle independent of first-request order
   painter(ctx, TEX_SIZE);
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;

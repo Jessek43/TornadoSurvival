@@ -12,6 +12,7 @@ import { AudioSystem } from "./systems/AudioSystem";
 import { CameraRig } from "./systems/CameraRig";
 import { DamageSystem } from "./systems/DamageSystem";
 import { DebrisManager } from "./systems/DebrisManager";
+import { Flashlight } from "./systems/Flashlight";
 import { FunnelVisual } from "./systems/FunnelVisual";
 import { InteriorLights } from "./systems/InteriorLights";
 import { PlayerController } from "./systems/PlayerController";
@@ -57,6 +58,7 @@ export class Game {
   readonly player: PlayerController;
   readonly damage: DamageSystem;
   readonly cameraRig: CameraRig;
+  readonly flashlight: Flashlight;
   readonly atmosphere: Atmosphere;
   readonly audio: AudioSystem;
   readonly interiorLights: InteriorLights;
@@ -139,6 +141,7 @@ export class Game {
     // enclosure (roof + windward wall). See StructureSystem.shelterExposureAt.
     this.player.setWindExposureQuery((pos, dir) => this.structures.shelterExposureAt(pos, dir));
     this.cameraRig = new CameraRig(this.camera, this.player, this.windField, this.noise);
+    this.flashlight = new Flashlight(this.scene);
     this.atmosphere = new Atmosphere(
       this.scene,
       this.camera,
@@ -177,6 +180,7 @@ export class Game {
   update(dt: number): void {
     // (1) Input — one snapshot per frame; systems never read the DOM directly.
     const input = this.input.poll();
+    if (input.flashlightPressed) this.flashlight.toggle();
 
     // (2) Round state machine: warning (siren, scout, pick shelter) →
     //     active (the storm walks in) → result (survived or died, restart).
@@ -252,8 +256,9 @@ export class Game {
     // (10) Debris lifecycle: sleep → fade → despawn under budget.
     this.debris.update(dt);
 
-    // (11) Camera mode + shake.
+    // (11) Camera mode + shake, then glue the flashlight to the final view.
     this.cameraRig.update(dt, this.time);
+    this.flashlight.update(this.camera);
 
     // (12) Mood: interior lights, funnel visual, atmosphere, audio bed.
     this.interiorLights.update(this.player.position, dt);
@@ -276,6 +281,7 @@ export class Game {
     this.hud.update(
       this.damage.health,
       this.player.stamina * 100,
+      this.player.runStamina * 100,
       !this.input.isPointerLocked && this.phase !== "result",
     );
     this.debug?.update(dt);

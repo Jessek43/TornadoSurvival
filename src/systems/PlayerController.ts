@@ -35,6 +35,8 @@ export class PlayerController {
   state: PlayerState = "active";
   /** 0..1 — grip endurance. Drains while holding on in wind, regens in calm. */
   stamina = 1;
+  /** 0..1 — sprint endurance. Drains while running, regens while walking/idle. */
+  runStamina = 1;
   gripping = false;
 
   readonly body: RAPIER.RigidBody;
@@ -47,6 +49,14 @@ export class PlayerController {
 
   private readonly velocity = new THREE.Vector3();
   private grounded = false;
+  /** 0 = standing, 1 = fully crouched. Smoothed each fixed step; drives both
+   *  the collider shrink and the eye-height dip. */
+  private crouchAmount = 0;
+  /** Capsule total height currently applied to the collider — resize only when
+   *  the crouch target actually moves it. */
+  private appliedCapsuleH = GameConfig.player.height;
+  /** Sprint locked out until runStamina recovers past the threshold. */
+  private exhausted = false;
   /** Buffered jump: set every frame the key is pressed, consumed on a fixed
    *  step. Decouples the one-frame input edge from fixed-step timing. */
   private jumpBuffer = 0;
@@ -210,15 +220,45 @@ export class PlayerController {
       return;
     }
 
+    // --- crouch: shrink the real capsule, pin its BOTTOM to the standing foot
+    // line via a collider offset. The body centre never moves (so the character
+    // controller and ground contact are untouched), only the head comes down —
+    // you truly fit under gaps between crouchHeight and standing height. ---
+    const crouchTarget = input.crouchHeld ? 1 : 0;
+    this.crouchAmount += (crouchTarget - this.crouchAmount) * (1 - Math.exp(-cfg.crouchLerp * dt));
+    const capsuleH = cfg.height + (cfg.crouchHeight - cfg.height) * this.crouchAmount;
+    if (Math.abs(capsuleH - this.appliedCapsuleH) > 1e-4) {
+      this.collider.setHalfHeight(Math.max(0.05, capsuleH / 2 - cfg.radius));
+      this.collider.setTranslationWrtParent({ x: 0, y: (capsuleH - cfg.height) / 2, z: 0 });
+      this.appliedCapsuleH = capsuleH;
+    }
+
+    // --- sprint stamina: drains while actually running, regens otherwise; an
+    // empty bar locks sprint out until it recovers past the threshold. ---
+    const moving = input.moveX !== 0 || input.moveY !== 0;
+    const sprinting =
+      input.sprintHeld && !input.crouchHeld && moving && !this.exhausted && this.runStamina > 0;
+    if (sprinting) {
+      this.runStamina = Math.max(0, this.runStamina - cfg.sprintDrain * dt);
+      if (this.runStamina === 0) this.exhausted = true;
+    } else {
+      this.runStamina = Math.min(1, this.runStamina + cfg.sprintRegen * dt);
+      if (this.exhausted && this.runStamina >= cfg.sprintRecoverThreshold) this.exhausted = false;
+    }
+
+    // Crouch overrides sprint (no sprint-crouch); grip zeroes movement below.
+    const speed =
+      cfg.walkSpeed * (input.crouchHeld ? cfg.crouchMultiplier : sprinting ? cfg.sprintMultiplier : 1);
+
     // Input is camera-relative: rotate the (strafe, forward) stick by yaw.
     // With three.js conventions, yaw 0 faces −Z, so forward = (−sin, 0, −cos)
     // and right = (cos, 0, −sin).
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
     this.desiredMove.set(
-      (input.moveX * cos - input.moveY * sin) * cfg.walkSpeed,
+      (input.moveX * cos - input.moveY * sin) * speed,
       0,
-      (-input.moveX * sin - input.moveY * cos) * cfg.walkSpeed,
+      (-input.moveX * sin - input.moveY * cos) * speed,
     );
 
     if (this.gripping) {
@@ -444,7 +484,9 @@ export class PlayerController {
     this.state = "active";
   }
 
-  /** Per-frame (render-rate) update: mouse look + jump buffering + mesh sync. */
+  /** Per-frame (render-rate) update: mouse look + jump buffering + mesh sync.
+   *  (Crouch smoothing + capsule resize live in fixedUpdate so the collider and
+   *  the eye height stay in lockstep with the physics body.) */
   update(_dt: number, input: InputState): void {
     const cfg = GameConfig.player;
     this.yaw -= input.lookX * cfg.mouseSensitivity;
@@ -478,11 +520,13 @@ export class PlayerController {
     return this.mesh.position;
   }
 
-  /** World position of the eyes — the first-person camera anchor. */
+  /** World position of the eyes — the first-person camera anchor. Dips toward
+   *  crouchEyeHeight as the player crouches. */
   getEyePosition(out: THREE.Vector3): THREE.Vector3 {
-    const { height, eyeHeight } = GameConfig.player;
+    const { height, eyeHeight, crouchEyeHeight } = GameConfig.player;
+    const eye = eyeHeight + (crouchEyeHeight - eyeHeight) * this.crouchAmount;
     const t = this.body.translation();
-    return out.set(t.x, t.y - height / 2 + eyeHeight, t.z);
+    return out.set(t.x, t.y - height / 2 + eye, t.z);
   }
 }
 
