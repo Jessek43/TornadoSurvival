@@ -666,18 +666,11 @@ function floorDoorways(m: FloorMap): Doorway[] {
   return out;
 }
 
-/**
- * DOOR HEADERS — the wall ABOVE every opening must be solid to the ceiling
- * across the whole opening, with no vertical slot flanking the header. Samples
- * the header band over each doorway (both jamb ends + the middle, at two
- * heights) and counts uncovered points → must be 0 on every floor.
- */
-function checkDoorHeaders(boxes: Box[], floorMaps: FloorMap[]): { open: number; bad: string[] } {
+/** A point-in-wall test over the emitted wall geometry (interior cladding/
+ *  concrete + exterior glass), spatially hashed for cheap sampling. */
+function wallCoverage(boxes: Box[]): (x: number, y: number, z: number) => boolean {
   const hash = new Map<string, Box[]>();
   const bucket = (x: number, z: number): string => `${Math.floor(x / 4)},${Math.floor(z / 4)}`;
-  // Interior headers/walls are cladding/concrete; a doorway that opens toward
-  // the facade is closed above by the exterior wall (glass in the window band),
-  // so glass counts as covering too.
   const isWall = (m: MaterialId): boolean => m === "cladding" || m === "concrete" || m === "glass";
   for (const b of boxes) {
     if (!isWall(b.material)) continue;
@@ -691,13 +684,23 @@ function checkDoorHeaders(boxes: Box[], floorMaps: FloorMap[]): { open: number; 
     }
   }
   const E = 1e-4;
-  const covered = (x: number, y: number, z: number): boolean =>
+  return (x, y, z) =>
     (hash.get(bucket(x, z)) ?? []).some(
       (b) =>
         x >= b.min[0] - E && x <= b.max[0] + E &&
         y >= b.min[1] - E && y <= b.max[1] + E &&
         z >= b.min[2] - E && z <= b.max[2] + E,
     );
+}
+
+/**
+ * DOOR HEADERS — the wall ABOVE every opening must be solid to the ceiling
+ * across the whole opening, with no vertical slot flanking the header. Samples
+ * the header band over each doorway (both jamb ends + the middle, at two
+ * heights) and counts uncovered points → must be 0 on every floor.
+ */
+function checkDoorHeaders(boxes: Box[], floorMaps: FloorMap[]): { open: number; bad: string[] } {
+  const covered = wallCoverage(boxes);
   const bad: string[] = [];
   let open = 0;
   for (const m of floorMaps) {
@@ -715,6 +718,41 @@ function checkDoorHeaders(boxes: Box[], floorMaps: FloorMap[]): { open: number; 
             open++;
             if (bad.length < 4) {
               bad.push(`f${m.f}: open above ${d.axis}-doorway (mid ${d.mid}, edge ${d.edge}) at (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`);
+            }
+          }
+        }
+      }
+    }
+  }
+  return { open, bad };
+}
+
+/**
+ * ROOM FACADE COVERAGE — closes the enclosure blind spot at the walk-through
+ * entrance. A ROOM cell that borders OUTSIDE relies on the exterior wall for
+ * that side; but the entrance gap has NO exterior wall, so a room flanking it
+ * would sit open to the street while the enclosure assert (which exempts
+ * OUTSIDE edges) passed it over. Here every ROOM facade edge is sampled at
+ * window height and must be covered by an exterior wall (glass counts) → an
+ * entrance room left open FAILS. Corridors may be open (that IS the entrance).
+ */
+function checkFacadeCoverage(boxes: Box[], floorMaps: FloorMap[]): { open: number; bad: string[] } {
+  const covered = wallCoverage(boxes);
+  const bad: string[] = [];
+  let open = 0;
+  for (const m of floorMaps) {
+    const y = wallBaseY(m.f) + 1.2; // window band
+    for (let ix = 0; ix < NX; ix++) {
+      for (let iz = 0; iz < NZ; iz++) {
+        if (cellKindAt(m, ix, iz) !== Cell.ROOM) continue;
+        for (const [dx, dz] of NEI) {
+          if (cellKindAt(m, ix + dx, iz + dz) !== Cell.OUTSIDE) continue; // facade = borders OUTSIDE
+          const x = dx === 1 ? cellX0(ix + 1) : dx === -1 ? cellX0(ix) : cellCX(ix);
+          const z = dz === 1 ? cellZ0(iz + 1) : dz === -1 ? cellZ0(iz) : cellCZ(iz);
+          if (!covered(x, y, z)) {
+            open++;
+            if (bad.length < 4) {
+              bad.push(`f${m.f}: room cell (${ix},${iz}) open to the outside — no exterior wall at (${x.toFixed(1)}, ${z.toFixed(1)})`);
             }
           }
         }
@@ -829,6 +867,11 @@ export function verifyHospital(
     const headers = checkDoorHeaders(boxes, opts.floorMaps);
     for (const m of headers.bad) failures.push(m);
     info.push(`door headers: ${headers.open} open samples above openings (want 0)`);
+
+    // Fix 1 — room facade coverage: no room left open to the outside (entrance).
+    const facade = checkFacadeCoverage(boxes, opts.floorMaps);
+    for (const m of facade.bad) failures.push(m);
+    info.push(`room facade coverage: ${facade.open} room cells open to outside (want 0)`);
 
     if (opts.rooms) {
       const roomCheck = checkRooms(boxes, opts.rooms);

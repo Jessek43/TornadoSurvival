@@ -83,6 +83,10 @@ export const FLOOR_SPECS: readonly FloorSpec[] = [
       avenue(14, 0),
       ...[3, 6, 16, 26].map(rib),
       ...STAIR_RIBS.map(rib),
+      // Entrance vestibule: the main-door walk-through (x∈[-3.2,3.2], cells
+      // ix14–17) opens into this concourse, so the rooms flanking it are fully
+      // enclosed instead of sitting open to the street.
+      { x: 14, z: 22, w: 4, d: 2 },
     ],
     facade: "patient", // ED treatment / resus bays around the concourse
     core: "store", // records / pharmacy store off the lobby
