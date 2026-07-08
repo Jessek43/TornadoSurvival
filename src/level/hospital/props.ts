@@ -428,6 +428,101 @@ export function wallBox(
   return [frame(x, z, facing)(mat, 0, bottomY, size / 2 + 0.02, size, size, size)];
 }
 
+// ===========================================================================
+// WARD / OFFICE / KITCHEN DETAIL PROPS — the density that makes a furnished
+// room read as a real hospital space. Every factory obeys the same discipline
+// as the kit above (freestanding props bottom-flush on the deck; wall props
+// abut the inner face; sub-blocks stack or inset ≥ 5 cm so no two same-facing
+// faces overlap; small loose items are propWhite/furniture-tier so they fling
+// whole in the storm). Counts are kept low — archetypes.ts scales how MANY of
+// these a room gets by its size.
+// ===========================================================================
+
+/** Over-bed cantilever table — 3 blocks: a foot, a slim upright, a top slab
+ *  that overhangs on its own plane. Slides in beside a bed at table height. */
+export function overbedTable(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("metal", 0, floorY, 0.25, 0.44, 0.04, 0.4), // foot
+    put("metal", 0, floorY + 0.04, 0.25, 0.08, 0.78, 0.08), // upright
+    put("propWhite", 0, floorY + 0.82, 0.32, 0.5, 0.05, 0.7), // cantilevered top
+  ];
+}
+
+/** Wall vitals monitor — 2 blocks: a white housing abutting the wall + a dark
+ *  screen embedded proud of its face. Hangs above the bedhead (clears the bed). */
+export function vitalsMonitor(x: number, bottomY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("propWhite", 0, bottomY, 0.06, 0.46, 0.4, 0.12), // housing
+    put("accentBlue", 0, bottomY + 0.05, 0.14, 0.36, 0.3, 0.04), // screen (proud)
+  ];
+}
+
+/** Desktop PC on a desk/counter top — 3 blocks: monitor screen on a stalk, a
+ *  keyboard. `topY` is the surface top; everything stacks above it, inset so no
+ *  face aligns with the surface below. */
+export function deskPC(x: number, topY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("metal", 0, topY, 0.5, 0.08, 0.12, 0.08), // stalk
+    put("accentBlue", 0, topY + 0.12, 0.5, 0.5, 0.34, 0.05), // screen
+    put("propWhite", 0, topY, 0.18, 0.42, 0.03, 0.16), // keyboard (front, on the surface)
+  ];
+}
+
+/** Bookshelf / chart rack — 3 blocks: a tall body + two shelf ledges proud of
+ *  the front (their own planes). Freestanding, backs onto a wall. */
+export function bookshelf(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("wood", 0, floorY, 0.3, 0.9, 1.6, 0.55),
+    put("propWhite", 0, floorY + 0.55, 0.62, 0.82, 0.06, 0.06), // lower shelf lip
+    put("propWhite", 0, floorY + 1.05, 0.62, 0.82, 0.06, 0.06), // upper shelf lip
+  ];
+}
+
+/** Wall cabinet band (over a kitchen counter / lab bench) — 1 block hung high
+ *  on the wall, its own y-plane clear of the worktop below (0.5 m tall so a
+ *  1.5 m mount top-outs at 2.0 m, clear of the 2.05 m department soffit band). */
+export function upperCabinets(
+  x: number,
+  bottomY: number,
+  z: number,
+  facing: Facing,
+  len: number,
+): BlockDef[] {
+  return [frame(x, z, facing)("propWhite", 0, bottomY, 0.18, len, 0.5, 0.36)];
+}
+
+/** Counter-top appliance (microwave / coffee machine) — 2 blocks: a body + a
+ *  dark front panel. Sits on a worktop; `topY` is the worktop top. */
+export function counterAppliance(x: number, topY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("propWhite", 0, topY, 0.32, 0.5, 0.3, 0.4),
+    put("metal", 0, topY + 0.05, 0.53, 0.4, 0.2, 0.04), // door panel (proud of the front)
+  ];
+}
+
+/** Small bin — 1 loose metal block, propWhite-tier weight isn't wanted (a bin
+ *  is steel), but it must fling: metal at furniture scale is fine as debris. */
+export function bin(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  return [frame(x, z, facing)("metal", 0, floorY, 0.22, 0.34, 0.6, 0.34)];
+}
+
+/** Flat item resting on a surface (clipboard / tray / folder) — 1 tiny loose
+ *  block. `topY` is the surface it lies on. */
+export function deskItem(
+  x: number,
+  topY: number,
+  z: number,
+  facing: Facing,
+  mat: MaterialId = "propWhite",
+): BlockDef[] {
+  return [frame(x, z, facing)(mat, 0, topY, 0.3, 0.28, 0.04, 0.36)];
+}
+
 /** Rooftop cross — 3 signRed blocks: post standing on the roof deck + two
  *  arms ABUTTING the post's sides (never an overlapping plus — intersecting
  *  same-size bars would put coplanar same-facing faces with real area). */

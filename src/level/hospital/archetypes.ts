@@ -91,6 +91,16 @@ function acrossPoint(a: Anchor, across: number): [number, number] {
   return a.facing === "+z" || a.facing === "-z" ? [a.bx + across, a.bz] : [a.bx, a.bz + across];
 }
 
+/** A point `across` metres along the back wall AND `into` metres toward the
+ *  door — for tucking a chair/bin into a room corner off the door approach. */
+function spot(a: Anchor, across: number, into: number): [number, number] {
+  const [x, z] = acrossPoint(a, across);
+  if (a.facing === "+z") return [x, z + into];
+  if (a.facing === "-z") return [x, z - into];
+  if (a.facing === "+x") return [x + into, z];
+  return [x - into, z];
+}
+
 export function furnishRoom(room: BuiltRoom, blocks: BlockDef[]): void {
   const a = anchorOf(room);
   if (!a) return; // unreachable room — leave bare (verify's reachability flags it)
@@ -137,7 +147,13 @@ export function furnishRoom(room: BuiltRoom, blocks: BlockDef[]): void {
     blocks.push(...props.bed(a.bx, base, a.bz, a.facing));
     wall(props.bedheadPanel(a.bx, base, a.bz, a.facing));
     blocks.push(...props.bedsideCabinet(b2x, base, b2z, a.facing));
-    if (wide) blocks.push(...props.ivStand(b3x, base, b3z, a.facing));
+    wall(props.vitalsMonitor(b2x, base + 1.5, b2z, a.facing)); // monitor over the bedside
+    if (wide) {
+      blocks.push(...props.ivStand(b3x, base, b3z, a.facing));
+      blocks.push(...props.deskItem(b2x, base + 0.85, b2z, a.facing)); // chart on the cabinet
+      const [cx, cz] = spot(a, -(a.cross / 2 - 0.5), 1.1); // visitor chair in the far corner
+      blocks.push(...props.chair(cx, base, cz, invert(a.facing)));
+    }
   } else if (c === "icu") {
     blocks.push(...props.bed(a.bx, base, a.bz, a.facing));
     wall(props.bedheadPanel(a.bx, base, a.bz, a.facing));
@@ -175,16 +191,30 @@ export function furnishRoom(room: BuiltRoom, blocks: BlockDef[]): void {
   } else if (c === "office") {
     const [chx, chz] = offsetInto(a, 1.9);
     blocks.push(...props.officeDesk(a.bx, base, a.bz, a.facing));
+    blocks.push(...props.deskPC(a.bx, base + 0.78, a.bz, a.facing)); // PC on the desk top
     blocks.push(...props.chair(chx, base, chz, invert(a.facing)));
     blocks.push(...props.cabinet(b2x, base, b2z, a.facing));
+    wall(props.wallPanel(a.bx, base + 1.35, a.bz, a.facing, "propWhite", 1.0, 0.6)); // whiteboard over the desk
+    if (wide) {
+      // Bookshelf tucked into the far corner — clamped so its 0.9 m body clears
+      // the side wall even in a minimum-width (3.4 m) bay.
+      const [bkx, bkz] = acrossPoint(a, -(a.cross / 2 - 0.55));
+      blocks.push(...props.bookshelf(bkx, base, bkz, a.facing));
+      wall(props.wallBox(b2x, base + 1.8, b2z, a.facing, "accentBlue", 0.24)); // wall clock
+    }
   } else if (c === "kitchen") {
     const clen = Math.min(a.cross - 1.0, 1.4);
     blocks.push(...props.counter(a.bx, base, a.bz, a.facing, clen));
+    wall(props.upperCabinets(a.bx, base + 1.5, a.bz, a.facing, clen)); // cabinets over the run
+    blocks.push(...props.counterAppliance(a.bx, base + 0.91, a.bz, a.facing)); // microwave on the worktop
     if (wide) {
       const [apx, apz] = acrossPoint(a, clen / 2 + 0.6); // fridge/oven past the run
       blocks.push(...props.appliance(apx, base, apz, a.facing));
       const [tx, tz] = offsetInto(a, 1.9);
       blocks.push(...props.kitchenTable(tx, base, tz, a.facing));
+      const [bx, bz] = spot(a, -(a.cross / 2 - 0.35), 0.4); // bin in the corner
+      blocks.push(...props.bin(bx, base, bz, a.facing));
+      wall(props.wallBox(b3x, base + 1.75, b3z, a.facing, "signRed", 0.24)); // wall clock
     }
   } else if (c === "waiting") {
     blocks.push(...props.benchRow(a.bx, base, a.bz, a.facing, "accentBlue"));
@@ -192,8 +222,19 @@ export function furnishRoom(room: BuiltRoom, blocks: BlockDef[]): void {
       const [b2ax, b2az] = offsetInto(a, 1.9);
       blocks.push(...props.benchRow(b2ax, base, b2az, a.facing, "accentOrange"));
     }
+  } else if (c === "nurse_station") {
+    // receptionDesk (returns reach ±1.7 m) fits the blind core bays these land
+    // in; a wider U-counter would poke the side walls. Dress it with the
+    // workstation PC + a wall-mounted patient board.
+    blocks.push(...props.receptionDesk(a.bx, base, a.bz, a.facing, "accentTeal"));
+    blocks.push(...props.deskPC(a.bx, base + 1.03, a.bz, a.facing)); // workstation on the counter
+    wall(props.wallPanel(a.bx, base + 1.4, a.bz, a.facing, "accentTeal", 1.2, 0.55)); // patient board
+    if (wide) {
+      const [pcx, pcz] = acrossPoint(a, 0.9);
+      blocks.push(...props.deskPC(pcx, base + 1.03, pcz, a.facing)); // 2nd workstation
+    }
   } else {
-    // nurse_station (and any future public desk) — faces the door.
+    // any future public desk — faces the door.
     blocks.push(...props.receptionDesk(a.bx, base, a.bz, a.facing, "accentTeal"));
   }
 
