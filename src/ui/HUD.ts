@@ -32,7 +32,7 @@ export class HUD {
       "font:14px system-ui;text-align:center;line-height:1.7;";
     this.prompt.innerHTML =
       "<b>Click to play</b><br>WASD move · mouse look · Space jump<br>" +
-      "Shift sprint · Ctrl crouch · F flashlight<br>" +
+      "Shift sprint · C crouch · F flashlight<br>" +
       "E hold on in wind · R restart";
     uiRoot.appendChild(this.prompt);
   }

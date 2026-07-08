@@ -1,4 +1,5 @@
 import RAPIER from "@dimforge/rapier3d-compat";
+import { inject } from "@vercel/analytics";
 import { Game } from "./Game";
 
 /**
@@ -7,6 +8,10 @@ import { Game } from "./Game";
  * point.
  */
 async function boot(): Promise<void> {
+  // Vercel Web Analytics — framework-agnostic injector for this Vite SPA.
+  // Only phones home on the deployed site; a no-op in local dev.
+  inject();
+
   // Rapier 0.19 logs a deprecation asking for an options object here, but
   // its own type definitions still declare zero parameters — harmless.
   await RAPIER.init();

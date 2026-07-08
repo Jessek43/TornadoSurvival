@@ -14,20 +14,20 @@ import {
 } from "postprocessing";
 import type { QualitySettings } from "../config/QualitySettings";
 import type { TornadoSystem } from "./TornadoSystem";
-// The storm sky panorama (assets/images/storm_texture.png). Imported so Vite
-// bundles + hashes it; it becomes the scene background (mapped onto the sky
-// dome, equirectangular) in place of the old procedural gradient.
-import stormTextureUrl from "../../assets/images/storm_texture.png";
+// The storm sky image (assets/images/storm_texture_2.png). Imported so Vite
+// bundles + hashes it; it is mapped onto the world-fixed sky DOME (see the dome
+// shader below) in place of the old procedural gradient.
+import stormTextureUrl from "../../assets/images/storm_texture_2.png";
 
 /**
  * Everything mood — this file is where "Teardown, not Roblox" happens.
  *
- *  - A STORM SKY DOME textured with the storm panorama
- *    (assets/images/storm_texture.png), sampled equirectangularly and drifting
- *    slowly so it reads as a live cloud mass. It's the scene background: the
- *    dome follows the camera and is drawn first, so looking around reveals the
- *    panorama while moving keeps it fixed to the world. The lightning washes
- *    below still layer on top of it.
+ *  - A world-fixed STORM SKY DOME showing the storm image. The dome follows the
+ *    camera POSITION but not its rotation, so the sky stays put in the world as
+ *    you look around. Because the source is a flat photo (not a 360 pano), the
+ *    dome shader MIRRORS the horizontal wrap so its edges meet with no seam, and
+ *    caps the zenith/nadir with a solid colour so the poles can't swirl. The
+ *    lightning washes still layer on top.
  *  - Heavy exponential fog (desaturated grey) so distance fades to haze —
  *    depth — instead of to black. Fog is doing double duty: dread device AND
  *    draw-distance limiter.
@@ -87,7 +87,14 @@ export class Atmosphere {
   /** 1 right at a strike, exponentially decaying to 0. */
   private flash = 0;
   private nextStrikeIn = 5;
-  private time = 0;
+
+  // --- STRIKE flash: an externally-triggered flash (LightningSystem, one per
+  // 3D bolt) layered on the SAME sun-spike + sky-wash path as the ambient
+  // flasher above, but with its own value / decay / colour so triggering it
+  // never disturbs the ambient flash's timing or intensity (mood untouched).
+  private strikeFlash = 0;
+  private strikeFlashDecay = 11; // per-sec, derived from durationMs on trigger
+  private readonly strikeFlashColor = new THREE.Color(FLASH_COLOR);
 
   // --- BACKGROUND lightning: dim, frequent, far-off flashes that light the
   // cloud base at a random azimuth (shader-only — no scene lights, no sun
@@ -104,19 +111,20 @@ export class Atmosphere {
     quality: QualitySettings,
     private readonly tornado: TornadoSystem,
   ) {
-    // --- gradient sky dome ---
-    // Sits just inside the far plane and follows the camera so its edge is
-    // never reached. Rendered first, behind everything, and NOT fogged (the
-    // sky shouldn't fade into its own fog).
+    // --- storm sky dome ---
+    // A world-fixed dome (it follows the camera POSITION but not its rotation,
+    // so the sky stays put as you look around). Sits just inside the far plane,
+    // drawn first, un-fogged. The source is a flat photo, so the dome shader
+    // MIRRORS the horizontal wrap (edges meet themselves — no seam) and blends
+    // to a solid CAP colour near straight-up/down (no pole swirl). sRGB → the
+    // GPU decodes to linear for the HDR buffer the post chain tone-maps;
+    // ClampToEdge + anisotropy keep the sampled band crisp, not smeared.
     const radius = Math.min(quality.drawDistance * 0.9, 360);
-    // The storm panorama, sampled equirectangularly in the dome shader. sRGB so
-    // the GPU decodes it to linear on sample (matches the linear HDR buffer the
-    // post chain tone-maps); RepeatWrapping so the longitude seam wraps cleanly.
     const stormTex = new THREE.TextureLoader().load(stormTextureUrl);
     stormTex.colorSpace = THREE.SRGBColorSpace;
-    stormTex.wrapS = THREE.RepeatWrapping;
+    stormTex.wrapS = THREE.ClampToEdgeWrapping;
     stormTex.wrapT = THREE.ClampToEdgeWrapping;
-    stormTex.anisotropy = 4;
+    stormTex.anisotropy = 8;
     this.skyMat = new THREE.ShaderMaterial({
       uniforms: {
         uSky: { value: stormTex },
@@ -124,7 +132,10 @@ export class Atmosphere {
         uFlash: { value: 0 },
         uBgFlash: { value: 0 },
         uBgFlashDir: { value: this.bgFlashDir },
-        uTime: { value: 0 },
+        // Strike flash — its own scalar + colour so a 3D bolt washes the sky
+        // independently of the ambient flasher's uFlash.
+        uStrikeFlash: { value: 0 },
+        uStrikeFlashColor: { value: this.strikeFlashColor },
       },
       vertexShader: SKY_VERT,
       fragmentShader: SKY_FRAG,
@@ -132,7 +143,7 @@ export class Atmosphere {
       depthWrite: false,
       fog: false,
     });
-    this.sky = new THREE.Mesh(new THREE.SphereGeometry(radius, 32, 16), this.skyMat);
+    this.sky = new THREE.Mesh(new THREE.SphereGeometry(radius, 48, 24), this.skyMat);
     this.sky.renderOrder = -1;
     this.sky.frustumCulled = false;
     scene.add(this.sky);
@@ -198,12 +209,23 @@ export class Atmosphere {
     this.composer.addPass(new EffectPass(camera, toneMapping, grain, this.vignette, new SMAAEffect()));
   }
 
-  update(dt: number, playerPos: THREE.Vector3): void {
-    this.time += dt;
+  /**
+   * Fire a strike flash (LightningSystem, one per 3D bolt). Layers onto the
+   * existing sun-spike + sky-wash path via a private channel, so the ambient
+   * flasher is left exactly as it was. `intensity` may exceed 1 for a
+   * blown-out sun; the decay is set so the flash falls to ~5% over durationMs.
+   */
+  triggerStrikeFlash(intensity: number, durationMs: number, color: THREE.Color): void {
+    this.strikeFlash = Math.max(this.strikeFlash, intensity);
+    // e^{-k·d} = 0.05 → k = 3/d (seconds).
+    this.strikeFlashDecay = 3000 / Math.max(durationMs, 1);
+    this.strikeFlashColor.copy(color);
+  }
 
-    // Keep the sky dome centered on the camera so its edge is never reached.
+  update(dt: number, playerPos: THREE.Vector3): void {
+    // Keep the dome centered on the camera so its edge is never reached — it
+    // follows POSITION only, so the sky stays world-fixed as you look around.
     this.sky.position.copy(this.camera.position);
-    this.skyMat.uniforms.uTime.value = this.time;
 
     // Danger 0..1 — how much the storm should own the sky right now. Keyed off
     // the NEAREST funnel (§2a), so a second funnel darkens the scene on its own.
@@ -234,10 +256,10 @@ export class Atmosphere {
     }
     this.flash *= Math.exp(-8 * dt); // a strike lights the world for ~1/4 s
 
-    // BACKGROUND lightning: an independent, faster Poisson-ish schedule of
-    // dim far-off flashes. Shader-only (cloud-base illumination at a random
-    // azimuth) — deliberately does NOT spike the sun, tint the fog, or fire
-    // onLightning, so the close strikes stay the unmistakable peak.
+    // BACKGROUND lightning: an independent, faster Poisson-ish schedule of dim
+    // far-off flashes that light the dome's cloud base at a random azimuth —
+    // deliberately does NOT spike the sun, tint the fog, or fire onLightning, so
+    // the close strikes stay the unmistakable peak.
     this.nextBgFlashIn -= dt;
     if (this.nextBgFlashIn <= 0) {
       // 30% of flashes are quick double-flickers (the reference look).
@@ -248,13 +270,23 @@ export class Atmosphere {
     }
     this.bgFlash *= Math.exp(-11 * dt); // shorter than a close strike — a flicker
 
-    // Flash response — the flash spike/decay/tint strength are unchanged; the
-    // sun's danger dimming is folded into its base so a strike still blows out
-    // at full strength, and the flash lerps FROM the already-darkened storm fog.
-    this.sun.intensity = this.sunBaseIntensity * (1 - 0.45 * danger) * (1 + this.flash * 5);
+    // STRIKE flash decays on its own schedule (set from durationMs on trigger).
+    this.strikeFlash *= Math.exp(-this.strikeFlashDecay * dt);
+
+    // Flash response — the ambient flash spike/decay/tint strength are
+    // unchanged; the strike flash is ADDED into the sun spike and washes the
+    // sky/fog via its own colour. The sun's danger dimming is folded into its
+    // base so a strike still blows out at full strength, and the flash lerps
+    // FROM the already-darkened storm fog.
+    const flashTotal = this.flash + this.strikeFlash;
+    this.sun.intensity = this.sunBaseIntensity * (1 - 0.45 * danger) * (1 + flashTotal * 5);
     this.skyMat.uniforms.uFlash.value = this.flash;
+    this.skyMat.uniforms.uStrikeFlash.value = this.strikeFlash;
     this.skyMat.uniforms.uBgFlash.value = this.bgFlash;
-    this.fog.color.copy(this.fogScratch).lerp(this.flashColor, this.flash * 0.6);
+    this.fog.color
+      .copy(this.fogScratch)
+      .lerp(this.flashColor, this.flash * 0.6)
+      .lerp(this.strikeFlashColor, Math.min(this.strikeFlash, 1) * 0.5);
   }
 
   /** Replaces renderer.render — the whole frame goes through the grade. */
@@ -270,8 +302,8 @@ export class Atmosphere {
 const SKY_VERT = /* glsl */ `
   varying vec3 vDir;
   void main() {
-    // Sphere is centered on origin in object space, so the vertex position
-    // is also the view direction to that point on the dome.
+    // The dome is centered on the origin in object space, so a vertex position
+    // is also the view direction toward that point on the sky.
     vDir = normalize(position);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
@@ -283,22 +315,37 @@ const SKY_FRAG = /* glsl */ `
   uniform float uFlash;
   uniform float uBgFlash;
   uniform vec2 uBgFlashDir;
-  uniform float uTime;
+  uniform float uStrikeFlash;
+  uniform vec3 uStrikeFlashColor;
   varying vec3 vDir;
 
   const float PI = 3.14159265;
 
   void main() {
     vec3 dir = normalize(vDir);
-    // Equirectangular sample of the storm panorama. A very slow longitude drift
-    // keeps the cloud mass alive rather than a frozen backdrop (RepeatWrapping
-    // makes the drift + the ±PI seam wrap cleanly). uSky is sRGB → the sample
-    // is already linear, matching the HDR buffer the post chain tone-maps.
-    vec2 uv = vec2(
-      atan(dir.z, dir.x) / (2.0 * PI) + 0.5 + uTime * 0.0015,
-      clamp(asin(clamp(dir.y, -1.0, 1.0)) / PI + 0.5, 0.0, 1.0)
-    );
-    vec3 col = texture2D(uSky, uv).rgb;
+
+    // The source is a FLAT photo, not a seamless 360 pano. Two tricks keep it
+    // artefact-free on the world-fixed dome:
+    //  1. HORIZONTAL — a triangle wave of the compass angle, so the photo shows
+    //     across the front and MIRRORED across the back. Its left/right edges
+    //     meet THEMSELVES, so there is no colour-mismatch seam behind you.
+    //  2. VERTICAL — the photo rises from the horizon toward the zenith, then
+    //     blends into a solid CAP colour (sampled from the photo's own top row)
+    //     as you near straight up, so the pole can't pinch or swirl. A darker
+    //     cap covers straight-down.
+    // vTop / vHorizon are the tunable band: where the photo sits vertically.
+    float ang = fract(atan(dir.z, dir.x) / (2.0 * PI) + 0.5); // 0..1 compass
+    float u = 1.0 - abs(2.0 * ang - 1.0);                     // 0..1..0 triangle
+    float v = mix(0.30, 0.97, clamp(dir.y, 0.0, 1.0));        // horizon..zenith band
+    vec3 col = texture2D(uSky, vec2(u, v)).rgb;
+
+    // Zenith cap — a constant colour from the photo's top so straight-up is a
+    // smooth sky, never a swirl. Nadir cap — a darker floor (rarely seen; the
+    // ground geometry usually covers it) that also kills any bottom-pole swirl.
+    vec3 topCap = texture2D(uSky, vec2(0.5, 0.985)).rgb;
+    col = mix(col, topCap, smoothstep(0.58, 0.90, dir.y));
+    vec3 botCap = texture2D(uSky, vec2(0.5, 0.05)).rgb * 0.6;
+    col = mix(col, botCap, smoothstep(0.0, -0.35, dir.y));
 
     // BACKGROUND lightning: a dim far-off flash lifts the cloud base in one
     // azimuth sector near the horizon. Cheap — a few ALU ops on the dome only.
@@ -308,6 +355,10 @@ const SKY_FRAG = /* glsl */ `
 
     // CLOSE lightning wash — identical strength/timing to before.
     col = mix(col, uFlashColor, uFlash * 0.6);
+
+    // 3D-STRIKE wash — an independent flash channel (LightningSystem) so a
+    // positioned bolt lights the whole sky in its own colour.
+    col = mix(col, uStrikeFlashColor, clamp(uStrikeFlash, 0.0, 1.0) * 0.6);
 
     gl_FragColor = vec4(col, 1.0);
   }

@@ -191,12 +191,17 @@ export class InteriorLights {
     if (this.fixtureMesh.instanceColor) this.fixtureMesh.instanceColor.needsUpdate = true;
   }
 
-  /** Some fixtures are dead/dim for variety (deterministic per index). More
-   *  dead ones now → creepier pools of light and dark than uniform coverage. */
+  /** Some fixtures are dim for variety (deterministic per index) → pools of
+   *  light and shadow rather than flat coverage. An INTACT fixture always keeps
+   *  a visible floor so it still reads as a lit (if failing) lamp and casts some
+   *  light — a fixture only goes fully black/dark when its ROOM is destroyed
+   *  (the `dead` latch in update()), never merely for looking burned out. The
+   *  old 0.03 tier rendered as a solid black box that emitted nothing, which
+   *  read as broken lamps rather than atmosphere. */
   private baseBrightness(i: number): number {
     const r = ((i * 2654435761) >>> 0) % 100;
-    if (r < 15) return 0.03; // burned out (dark fixture)
-    if (r < 34) return 0.45; // weak / failing
+    if (r < 15) return 0.3; // failing — dim but clearly still lit
+    if (r < 34) return 0.55; // weak
     return 1;
   }
 

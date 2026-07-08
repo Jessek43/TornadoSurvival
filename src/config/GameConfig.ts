@@ -33,8 +33,8 @@ export const GameConfig = {
     eyeHeight: 1.65, // camera height above the feet
 
     walkSpeed: 4.5, // m/s
-    sprintMultiplier: 1.6, // × walkSpeed while sprinting (hold Shift)
-    crouchMultiplier: 0.5, // × walkSpeed while crouched (hold Ctrl / C)
+    sprintMultiplier: 1.8, // × walkSpeed while sprinting (hold Shift)
+    crouchMultiplier: 0.5, // × walkSpeed while crouched (hold C)
     crouchHeight: 1.1, // capsule TOTAL height while fully crouched (m) — the
     // collider really shrinks to this (bottom pinned to the standing foot line),
     // so you fit under lower gaps; must stay > 2×radius so the capsule is valid.
@@ -42,10 +42,10 @@ export const GameConfig = {
     crouchLerp: 14, // 1/s — how fast the view dips into / rises out of a crouch
     // --- sprint stamina (HUD "SPRINT" bar) ---
     sprintDrain: 0.2, // /s while sprinting → a full bar ≈ 5 s of running
-    sprintRegen: 0.15, // /s recovered while walking / standing
+    sprintRegen: 0.3, // /s recovered while walking / standing
     sprintRecoverThreshold: 0.2, // after emptying, must refill this far before sprint re-enables
     climbSpeed: 3, // m/s up/down a ladder
-    jumpSpeed: 4.8, // m/s upward → apex ≈ v²/2g ≈ 1.2 m
+    jumpSpeed: 5.3, // m/s upward → apex ≈ v²/2g ≈ 1.2 m
     // Jump input is buffered (captured every rendered frame) and consumed on
     // the next fixed step, so a jump is never lost on frames that run zero
     // fixed steps (common above 60 Hz). Coyote time lets you jump just after
@@ -93,7 +93,7 @@ export const GameConfig = {
     // ~3+ storeys (≥14.5 m/s → ~94 hp, 4 storeys lethal) will kill. The 6 m/s
     // safe floor stays above a normal jump landing (~4.8 m/s) so jumping and
     // ≤1.8 m hops never hurt. Tunable live via the fall readout in ?debug.
-    fallSafeSpeed: 6, // m/s of landing speed below which a fall is harmless
+    fallSafeSpeed: 8, // m/s of landing speed below which a fall is harmless
     fallDamageFactor: 11, // hp per m/s of landing speed beyond fallSafeSpeed
   },
 
@@ -110,7 +110,7 @@ export const GameConfig = {
     // genuinely lethal over time and near-misses sting — while shelter, which
     // lowers the FELT pressure this reads, still protects you.
     batterPressure: 400, // |w|² (≈20 m/s felt) below which exposure is harmless
-    batterPerSec: 8, // hp/s at exactly sweepPressure; scales with felt pressure
+    batterPerSec: 12, // hp/s at exactly sweepPressure; scales with felt pressure
   },
 
   camera: {
@@ -230,16 +230,16 @@ export const GameConfig = {
   // Interior emergency lighting (systems/InteriorLights.ts). A small pool of
   // real point lights follows the player; unlimited emissive fixtures glow.
   interiorLights: {
-    range: 16, // m — point-light reach
+    range: 100, // m — point-light reach
     // Modest lift over the original 54 for the FURNISHED rooms (equipment was
     // eating the light), but the steep decay 1.8 is RESTORED after an over-bright
     // first pass (74/1.55 read washed-out): keeps the scary POOL-of-light-with-
     // shadow-between look rather than flat fill. The real dark-corridor fix was
     // the fixture-run bug in partition.ts, not cranking this. Exterior storm
     // darkening (Atmosphere hemisphere/fog) is untouched.
-    baseIntensity: 60,
-    decay: 1.8,
-    flickerAmount: 0.62, // deeper, more unstable emergency flicker
+    baseIntensity: 10,
+    decay: 1,
+    flickerAmount: 0, // deeper, more unstable emergency flicker
     fixtureColor: 0x9fb08a, // sickly green-white emergency tint
     // A fixture with NO intact block this close to its housing has been
     // stranded — its room is gone — so it goes dark and its box vanishes. This

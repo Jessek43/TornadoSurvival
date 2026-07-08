@@ -115,31 +115,31 @@ export const LightningConfig: LightningConfigT = {
   groundStrikeAllowed: true,
 
   boltColor: 0xeaf3ff, // near-white with a cold cast (× boltBrightness → HDR)
-  boltBrightness: 3.5,
-  boltSegments: 14,
+  boltBrightness: 5,
+  boltSegments: 12,
   boltJitter: 4.5,
   boltWidth: 0.9,
   boltBranchChance: 0.35,
-  boltLifetimeMs: 220,
+  boltLifetimeMs: 400,
   boltFlickerCount: 4,
 
   boltFlashColor: 0xcfe4ff,
-  flashIntensity: 3.0,
+  flashIntensity: 6.0,
   flashDurationMs: 280,
   strikeLightIntensity: 1600,
   strikeLightDistance: 95,
 
   damageStructures: true,
-  damageRadius: 4,
+  damageRadius: 6,
   damageImpulse: 18,
   maxBlocksPerStrike: 22,
 
-  thunderVolume: 1.0, // ~2× the ambient rumble's average peak → clearly louder
+  thunderVolume: 3.5, // ~2× the ambient rumble's average peak → clearly louder
   thunderDelayMs: 120,
 
   cloudHeight: 150,
   targetAreaRadius: 130,
-  maxLiveBolts: 4,
+  maxLiveBolts: 40,
   cameraImpulse: 0.5,
   groundScorch: true,
   scorchRadius: 1.8,

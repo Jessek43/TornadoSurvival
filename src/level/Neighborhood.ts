@@ -338,6 +338,37 @@ function buildTree(cx: number, cz: number, scale: number): SectionSpec {
 }
 
 // ---------------------------------------------------------------------------
+// Keeping trees clear of buildings
+// ---------------------------------------------------------------------------
+
+interface Footprint {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+}
+
+/** XZ bounding box of a section's blocks — the widest extent, so a tree's box
+ *  is its canopy and a house's is its roof eave / porch, not just the walls. */
+function footprintXZ(spec: SectionSpec): Footprint {
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const b of spec.blocks) {
+    const hw = b.size[0] / 2;
+    const hd = b.size[2] / 2;
+    x0 = Math.min(x0, b.position[0] - hw);
+    x1 = Math.max(x1, b.position[0] + hw);
+    z0 = Math.min(z0, b.position[2] - hd);
+    z1 = Math.max(z1, b.position[2] + hd);
+  }
+  return { x0, x1, z0, z1 };
+}
+
+/** Do two footprints come within `m` of each other (overlap, or gap < m)? */
+function tooClose(a: Footprint, b: Footprint, m: number): boolean {
+  return a.x0 < b.x1 + m && a.x1 > b.x0 - m && a.z0 < b.z1 + m && a.z1 > b.z0 - m;
+}
+
+// ---------------------------------------------------------------------------
 // Assembly
 // ---------------------------------------------------------------------------
 
@@ -384,35 +415,72 @@ export function buildNeighborhood(): SectionSpec[] {
   sections.push(buildShop(-28, mainRowZ - 3.5));
   sections.push(buildShop(28, mainRowZ - 3.5));
 
+  // Every building is now placed; snapshot their footprints so the trees below
+  // can be kept clear of them. Trees are decorative sections appended AFTER, so
+  // nudging or dropping one never disturbs the hospital's fixture→section
+  // indices (those point only into the hospital range).
+  const buildings = sections.map(footprintXZ);
+  const TREE_CLEAR = 0.4; // gap a tree keeps from any wall / porch / eave
+  const MAX_NUDGE = 2.5; // shove a colliding tree at most this far, else drop it
+
+  /** Place a street tree — but first shove it out of any building it lands in
+   *  (minimum-translation along the shallower axis, iterated so a push out of
+   *  one building doesn't leave it inside another). If it still can't clear
+   *  within MAX_NUDGE it is dropped, so a tree never grows through a house. */
+  const addTree = (cx: number, cz: number, s: number): void => {
+    const spec = buildTree(cx, cz, s);
+    let dx = 0, dz = 0; // total displacement applied to clear buildings
+    for (let iter = 0; iter < 6; iter++) {
+      const f = footprintXZ(spec);
+      const hit = buildings.find((b) => tooClose(f, b, TREE_CLEAR));
+      if (!hit) break;
+      const penX = Math.min(f.x1, hit.x1) - Math.max(f.x0, hit.x0) + TREE_CLEAR;
+      const penZ = Math.min(f.z1, hit.z1) - Math.max(f.z0, hit.z0) + TREE_CLEAR;
+      let mx = 0, mz = 0;
+      if (penX < penZ) mx = ((f.x0 + f.x1) / 2 < (hit.x0 + hit.x1) / 2 ? -1 : 1) * penX;
+      else mz = ((f.z0 + f.z1) / 2 < (hit.z0 + hit.z1) / 2 ? -1 : 1) * penZ;
+      dx += mx;
+      dz += mz;
+      for (const b of spec.blocks) {
+        b.position[0] += mx;
+        b.position[2] += mz;
+      }
+    }
+    // Dropped if it wandered too far or still clips a building after the budget.
+    if (Math.hypot(dx, dz) > MAX_NUDGE) return;
+    if (buildings.some((b) => tooClose(footprintXZ(spec), b, TREE_CLEAR))) return;
+    sections.push(spec);
+  };
+
   // --- street trees ---
   let seed = 100;
   const jit = (): number => prand(seed++) * 2 - 1;
   const scale = (): number => 0.85 + prand(seed++) * 0.4;
   // North side of the main street: in the lawn gaps BETWEEN houses/shops.
   for (const x of [-56, -34, -20, 0, 20, 34, 56]) {
-    sections.push(buildTree(x + jit(), MAIN_Z + STREET_W / 2 + 2.6, scale()));
+    addTree(x + jit(), MAIN_Z + STREET_W / 2 + 2.6, scale());
   }
   // South side: only outside the parking-lot span so the lot/spawn stays open.
   for (const x of [-64, -55, -46, -34, 34, 46, 55, 64]) {
-    sections.push(buildTree(x + jit(), MAIN_Z - STREET_W / 2 - 2.4, scale()));
+    addTree(x + jit(), MAIN_Z - STREET_W / 2 - 2.4, scale());
   }
   // Cross streets, inner row (between the hospital block and the street).
   // Pushed out to ±36.6 and extended north for the 64×48 footprint: ≥3 m of
   // trunk clearance to the ±32 wall, and the row still flanks the full depth.
   for (const side of [-1, 1]) {
     for (let z = -52; z <= 16; z += 10) {
-      sections.push(buildTree(side * (CROSS_X - 3.4) + jit() * 0.5, z + jit() * 1.5, scale()));
+      addTree(side * (CROSS_X - 3.4) + jit() * 0.5, z + jit() * 1.5, scale());
     }
   }
   // Cross streets, outer row (in the gaps between the cross-street houses).
   for (const side of [-1, 1]) {
     for (const z of [-40, -17, 1, 18]) {
-      sections.push(buildTree(side * (CROSS_X + 5.2) + jit() * 0.5, z + jit(), scale()));
+      addTree(side * (CROSS_X + 5.2) + jit() * 0.5, z + jit(), scale());
     }
   }
   // A few scattered backyard trees behind the main-street houses.
   for (const x of [-58, -33, -8, 21, 44, 60]) {
-    sections.push(buildTree(x + jit() * 2, mainRowZ + 9 + prand(seed++) * 4, scale()));
+    addTree(x + jit() * 2, mainRowZ + 9 + prand(seed++) * 4, scale());
   }
 
   return sections;

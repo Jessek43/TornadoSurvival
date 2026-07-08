@@ -20,7 +20,7 @@ export interface InputState {
   gripHeld: boolean;
   /** True while sprint (Shift) is held. */
   sprintHeld: boolean;
-  /** True while crouch (Ctrl / C) is held. */
+  /** True while crouch (C) is held. */
   crouchHeld: boolean;
   /** True only on the frame the flashlight toggle (F) was pressed. */
   flashlightPressed: boolean;
@@ -32,7 +32,7 @@ export interface InputState {
  *  browser chords (Ctrl+S save, Ctrl+W close, Space scroll) don't fire mid-play. */
 const GAME_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "KeyE", "KeyF", "KeyR", "Space",
-  "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight",
+  "ShiftLeft", "ShiftRight",
 ]);
 
 export class InputManager {
@@ -88,8 +88,7 @@ export class InputManager {
       jumpPressed: this.jumpQueued,
       gripHeld: this.keys.has("KeyE"),
       sprintHeld: this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"),
-      crouchHeld:
-        this.keys.has("ControlLeft") || this.keys.has("ControlRight") || this.keys.has("KeyC"),
+      crouchHeld: this.keys.has("KeyC"),
       flashlightPressed: this.flashlightQueued,
       restartPressed: this.restartQueued,
     };
