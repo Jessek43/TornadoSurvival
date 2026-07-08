@@ -12,9 +12,11 @@ import { AudioSystem } from "./systems/AudioSystem";
 import { CameraRig } from "./systems/CameraRig";
 import { DamageSystem } from "./systems/DamageSystem";
 import { DebrisManager } from "./systems/DebrisManager";
+import { AlarmController } from "./systems/AlarmController";
 import { Flashlight } from "./systems/Flashlight";
 import { FunnelVisual } from "./systems/FunnelVisual";
 import { InteriorLights } from "./systems/InteriorLights";
+import { LightningSystem } from "./systems/LightningSystem";
 import { PlayerController } from "./systems/PlayerController";
 import { StructureSystem } from "./systems/StructureSystem";
 import { TornadoSystem } from "./systems/TornadoSystem";
@@ -62,6 +64,10 @@ export class Game {
   readonly atmosphere: Atmosphere;
   readonly audio: AudioSystem;
   readonly interiorLights: InteriorLights;
+  readonly lightning: LightningSystem;
+  /** Edge-triggered siren: audible while warning/receding, silent while a
+   *  funnel is present (see the alarm block in update). */
+  readonly alarm: AlarmController;
 
   // UI
   readonly hud: HUD;
@@ -157,6 +163,24 @@ export class Game {
     // Blocks tearing free → a weighty crash (throttled inside AudioSystem).
     this.structures.onBreak = (count) => this.audio.impact(count);
 
+    // Storm lightning: 3D bolts that flash the sky, damage struck structures
+    // (reusing the block-break + debris path), and clap thunder — gated to the
+    // storm window. Constructed after its dependencies (atmosphere/audio/camera).
+    this.lightning = new LightningSystem(
+      this.scene,
+      this.tornado,
+      this.structures,
+      this.atmosphere,
+      this.audio,
+      this.cameraRig,
+    );
+    // Alarm: start/stop the siren ONCE per transition (edge-triggered), never
+    // per frame. Desired state is decided in update()'s alarm block.
+    this.alarm = new AlarmController(
+      () => this.audio.setSirenLevel(1),
+      () => this.audio.setSirenLevel(0),
+    );
+
     this.hud = new HUD(uiRoot);
     this.roundUI = new RoundUI(uiRoot);
     // Restart = full page reload: the simplest guaranteed-clean rebuild of
@@ -175,6 +199,8 @@ export class Game {
           this.renderer,
           this.physics,
           hospital.stairLights,
+          this.lightning,
+          this.alarm,
         )
       : null;
   }
@@ -226,6 +252,12 @@ export class Game {
     // (4) Structures: wake near the tornado, run staggered break checks.
     this.structures.update(dt, this.time);
 
+    // (4b) Storm lightning: schedule strikes, build/strobe/dispose bolts, and
+    //      route strike damage through the same block-break + debris path (so
+    //      it respects the debris budget). Runs before the physics step so any
+    //      blown-off blocks are simulated this frame.
+    this.lightning.update(dt, this.time);
+
     // (5+6) Physics — fixed-timestep step(s) with catch-up cap. The callback
     //       runs before EACH fixed step: things that feed the simulation
     //       (wind drag on debris, the player's kinematic move) belong there
@@ -266,15 +298,16 @@ export class Game {
     this.interiorLights.update(this.player.position, dt);
     this.funnelVisual.update(dt);
     this.atmosphere.update(dt, this.player.position);
-    // Siren: full during the warning, rises with an incoming pass, quiets in
-    // the gaps between passes.
-    this.audio.setSirenLevel(
-      this.phase === "warning"
-        ? 1
-        : this.tornado.active
-          ? 0.35 + 0.4 * this.tornado.intensity
-          : 0,
-    );
+    // Alarm tied to tornado PRESENCE: audible while the storm is warned/incoming
+    // (warning phase) and after it recedes between passes (a live pass's state
+    // is "gap"), but SILENT while a funnel is actually present (state "pass") so
+    // it isn't blaring over the tornado. With a double tornado the state only
+    // returns to "gap" once ALL funnels have receded, so the alarm resumes only
+    // then. Edge-triggered inside AlarmController — start/stop fire once per
+    // transition, never per frame.
+    const alarmOn =
+      this.phase === "warning" || (this.phase === "active" && this.tornado.state === "gap");
+    this.alarm.set(alarmOn);
     this.audio.update(dt, this.time);
 
     // (13) Render — the whole frame goes through the post chain.

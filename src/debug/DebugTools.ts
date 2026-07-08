@@ -9,6 +9,9 @@ import type { PlayerController } from "../systems/PlayerController";
 import type { StructureSystem } from "../systems/StructureSystem";
 import type { DebrisManager } from "../systems/DebrisManager";
 import type { InteriorLights } from "../systems/InteriorLights";
+import type { LightningSystem } from "../systems/LightningSystem";
+import type { AlarmController } from "../systems/AlarmController";
+import { LightningConfig } from "../config/LightningConfig";
 import type { Physics } from "../core/Physics";
 import type { StairLight } from "../level/hospital/params";
 
@@ -67,6 +70,8 @@ export class DebugTools {
     private readonly renderer: THREE.WebGLRenderer,
     private readonly physics: Physics,
     private readonly stairLights: StairLight[],
+    private readonly lightning: LightningSystem,
+    private readonly alarm: AlarmController,
   ) {
     this.label = document.createElement("div");
     this.label.style.cssText =
@@ -194,7 +199,29 @@ export class DebugTools {
       this.tornadoReadout(),
       this.groundGapReadout(),
       `last landing: ${this.player.lastFallSpeed.toFixed(1)} m/s -> ${this.player.lastFallDamage.toFixed(0)} hp`,
+      this.lightningReadout(),
     ].join("\n");
+  }
+
+  /** Storm-lightning + alarm readout: whether strikes are enabled, the
+   *  next-strike countdown, the last strike (impact point, hit type, blocks
+   *  destroyed with the per-strike cap), and the alarm state paired with the
+   *  tornado-present flag it keys off. */
+  private lightningReadout(): string {
+    const l = this.lightning;
+    const last = l.lastStrike;
+    const lastStr = last
+      ? `(${last.x.toFixed(0)},${last.y.toFixed(0)},${last.z.toFixed(0)}) ${
+          last.ground ? "GROUND" : "STRUCTURE"
+        } blocks ${last.destroyed}/${LightningConfig.maxBlocksPerStrike}`
+      : "-";
+    const present = this.tornado.active; // a funnel is up this pass
+    return (
+      `§L lightning ${LightningConfig.enabled ? "on" : "OFF"}` +
+      ` · next ${Math.max(0, l.nextStrikeCountdown).toFixed(1)}s · last ${lastStr}\n` +
+      `§A alarm ${this.alarm.playing ? "PLAYING" : "stopped"}` +
+      ` (starts ${this.alarm.starts}/stops ${this.alarm.stops}) · tornado-present ${present ? "YES" : "no"}`
+    );
   }
 
   /** §2 — the multi-funnel readout: this round's funnel count + the

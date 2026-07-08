@@ -171,12 +171,21 @@ export class AudioSystem {
     if (fired) this.whooshCooldown = 0.25;
   }
 
-  /** Delayed thunder for a lightning strike (Atmosphere.onLightning). */
-  thunder(): void {
+  /**
+   * A thunder one-shot: a long lowpassed noise burst.
+   *
+   * Called two ways — with no args by Atmosphere's ambient mood flasher
+   * (unchanged: a random 0.2–1.2 s light-then-sound gap and a random 0.35–0.65
+   * peak), and with (volume, delayMs) by LightningSystem so a positioned strike
+   * can pin its own loudness and light-then-sound delay from LightningConfig.
+   */
+  thunder(volume?: number, delayMs?: number): void {
     if (!this.ctx) return;
     const ctx = this.ctx;
-    const start = ctx.currentTime + 0.2 + Math.random(); // light beats sound
+    const delay = delayMs !== undefined ? delayMs / 1000 : 0.2 + Math.random(); // light beats sound
+    const start = ctx.currentTime + delay;
     const dur = 1.5 + Math.random() * 1.5;
+    const peak = volume !== undefined ? volume : 0.35 + Math.random() * 0.3;
 
     const src = ctx.createBufferSource();
     src.buffer = this.brownBuffer;
@@ -187,11 +196,51 @@ export class AudioSystem {
     filter.frequency.exponentialRampToValueAtTime(90, start + dur);
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, start);
-    gain.gain.linearRampToValueAtTime(0.35 + Math.random() * 0.3, start + 0.05);
+    gain.gain.linearRampToValueAtTime(peak, start + 0.05);
     gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
     src.connect(filter).connect(gain).connect(this.master);
     src.start(start);
     src.stop(start + dur + 0.1);
+  }
+
+  /**
+   * The IMMEDIATE loud CRACK of a bolt landing (LightningSystem, paired with the
+   * flash) — a sharp bright transient stacked on a big low boom, much louder and
+   * punchier than the rolling `thunder()` that follows it. This is the "impact".
+   */
+  strikeCrack(volume = 0.95): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    // Sharp bright crack — a fast, high, decaying noise transient (the "snap").
+    const crack = ctx.createBufferSource();
+    crack.buffer = this.pinkBuffer;
+    crack.playbackRate.value = 1.8;
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 900;
+    const crackGain = ctx.createGain();
+    crackGain.gain.setValueAtTime(volume, now);
+    crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    crack.connect(hp).connect(crackGain).connect(this.master);
+    crack.start(now, Math.random());
+    crack.stop(now + 0.2);
+
+    // Big low boom under it (the concussion) — a fast body punch.
+    const boom = ctx.createBufferSource();
+    boom.buffer = this.brownBuffer;
+    boom.playbackRate.value = 0.8;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(700, now);
+    lp.frequency.exponentialRampToValueAtTime(70, now + 0.5);
+    const boomGain = ctx.createGain();
+    boomGain.gain.setValueAtTime(volume * 0.9, now);
+    boomGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    boom.connect(lp).connect(boomGain).connect(this.master);
+    boom.start(now, Math.random());
+    boom.stop(now + 0.65);
   }
 
   /** A heartbeat: two low sine thumps ("lub-dub"), louder when very close. */
