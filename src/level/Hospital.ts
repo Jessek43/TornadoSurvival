@@ -39,7 +39,7 @@ export function buildHospital(opts: { detail?: boolean } = {}): {
     // furnish passes only ever APPENDED to the shell's envelope sections.
     shellCounts = shell.sections.map((s) => s.blocks.length);
     partition = partitionHospital(shell); // per-floor rooms/corridors/doors + fixtures
-    furnish(shell, partition.rooms); // department equipment into each enclosed room
+    furnish(shell, partition.rooms, partition.floorMaps); // dept equipment + corridor dressing
   }
 
   // Dev-time invariant check (the CLI equivalent is `npm run verify:hospital`,

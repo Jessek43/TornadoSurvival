@@ -17,7 +17,7 @@ function run(label: string, detail: boolean): void {
   const shell = buildShell(detail ? { deckMaterial: DECK_PALETTE, interiorColumns: false } : {});
   const shellCounts = detail ? shell.sections.map((s) => s.blocks.length) : undefined;
   const partition = detail ? partitionHospital(shell) : undefined;
-  if (detail && partition) furnish(shell, partition.rooms);
+  if (detail && partition) furnish(shell, partition.rooms, partition.floorMaps);
   const result = verifyHospital(shell.sections, shell.lightFixtures, shell.exteriorFaces, {
     neighborhood: buildNeighborhood(),
     shellCounts,

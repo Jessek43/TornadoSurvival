@@ -631,32 +631,115 @@ function checkRooms(boxes: Box[], rooms: BuiltRoom[]): { bad: string[]; info: st
   return { bad, info };
 }
 
-/** Furnish must never spill a prop into a corridor cell (density contrast is
- *  the claustrophobia — corridors stay bare). Checks appended (non-shell)
- *  furniture-height blocks against the cell map. */
-function findCorridorIntrusions(
+/**
+ * CORRIDOR CIRCULATION — corridors are now DRESSED (a sparse wall-hugging prop
+ * scatter), so the old "0 props in a corridor" ban is gone. Instead this proves
+ * the dressing never chokes circulation: gather every furnish prop that lands on
+ * a corridor cell in the torso band, inflate each by the player capsule, flood
+ * the corridor free-space from a stair-adjacent cell, and require every corridor
+ * cell to still contain a reached sample. A prop that blocks a corridor turns
+ * the cells beyond it unreachable → non-zero blockedCells here. (Doorway
+ * blockage is separately re-proven by checkRooms' door-clearance test, which
+ * samples ALL boxes including these corridor props.)
+ */
+function checkCorridorCirculation(
   sections: SectionSpec[],
   shellCounts: number[],
   floorMaps: FloorMap[],
-): string[] {
+): { bad: string[]; propCount: number; blockedCells: number } {
   const bad: string[] = [];
+  type Rect2 = { x0: number; x1: number; z0: number; z1: number };
+  const obs: Rect2[][] = floorMaps.map(() => []);
+  let propCount = 0;
   for (let i = 0; i < shellCounts.length; i++) {
     const s = sections[i];
     for (let j = shellCounts[i]; j < s.blocks.length; j++) {
       const b = s.blocks[j];
-      const bottom = b.position[1] - b.size[1] / 2;
-      const f = Math.floor(bottom / P.floorHeight);
-      const rel = bottom - f * P.floorHeight;
-      if (rel >= 1.8 || f < 0 || f >= floorMaps.length) continue; // walls/lintels/ceiling props exempt
-      if (b.size[1] >= 2.2) continue; // full-height walls exempt
+      const bot = b.position[1] - b.size[1] / 2;
+      const top = b.position[1] + b.size[1] / 2;
+      const f = Math.floor((bot + 0.02) / P.floorHeight);
+      if (f < 0 || f >= floorMaps.length) continue;
+      const relBot = bot - f * P.floorHeight;
+      const relTop = top - f * P.floorHeight;
+      if (relBot > 1.7 || relTop < 0.2) continue; // outside the torso band → can't block a capsule
+      if (b.size[1] >= 2.2) continue; // full-height walls
       const ix = Math.floor((b.position[0] - GX0) / CELL);
       const iz = Math.floor((b.position[2] - GZ0) / CELL);
-      if (cellKindAt(floorMaps[f], ix, iz) === Cell.CORRIDOR) {
-        bad.push(`furnish prop intrudes on a corridor in ${s.name} at (${b.position[0].toFixed(1)}, ${b.position[2].toFixed(1)})`);
+      if (cellKindAt(floorMaps[f], ix, iz) !== Cell.CORRIDOR) continue;
+      propCount++;
+      obs[f].push({
+        x0: b.position[0] - b.size[0] / 2, x1: b.position[0] + b.size[0] / 2,
+        z0: b.position[2] - b.size[2] / 2, z1: b.position[2] + b.size[2] / 2,
+      });
+    }
+  }
+
+  let blockedCells = 0;
+  const STEP = 0.2;
+  const key = (sx: number, sz: number): number => sx * 100000 + sz;
+  for (const m of floorMaps) {
+    const boxes = obs[m.f];
+    const corridorCells: [number, number][] = [];
+    for (let ix = 0; ix < NX; ix++) {
+      for (let iz = 0; iz < NZ; iz++) {
+        if (cellKindAt(m, ix, iz) === Cell.CORRIDOR) corridorCells.push([ix, iz]);
+      }
+    }
+    if (corridorCells.length === 0) continue;
+    const free = (wx: number, wz: number): boolean => {
+      const ix = Math.floor((wx - GX0) / CELL);
+      const iz = Math.floor((wz - GZ0) / CELL);
+      if (cellKindAt(m, ix, iz) !== Cell.CORRIDOR) return false;
+      for (const b of boxes) {
+        if (wx > b.x0 - CAPSULE_R && wx < b.x1 + CAPSULE_R && wz > b.z0 - CAPSULE_R && wz < b.z1 + CAPSULE_R) {
+          return false;
+        }
+      }
+      return true;
+    };
+    const seen = new Set<number>();
+    const stack: [number, number][] = [];
+    const seed = (wx: number, wz: number): void => {
+      const sx = Math.round((wx - GX0) / STEP);
+      const sz = Math.round((wz - GZ0) / STEP);
+      if (seen.has(key(sx, sz)) || !free(GX0 + sx * STEP, GZ0 + sz * STEP)) return;
+      seen.add(key(sx, sz));
+      stack.push([sx, sz]);
+    };
+    for (const [ix, iz] of corridorCells) if (adjacentToCore(m, ix, iz)) seed(cellCX(ix), cellCZ(iz));
+    if (stack.length === 0) for (const [ix, iz] of corridorCells) seed(cellCX(ix), cellCZ(iz));
+    while (stack.length) {
+      const [sx, sz] = stack.pop()!;
+      for (const [dx, dz] of NEI) {
+        const nsx = sx + dx;
+        const nsz = sz + dz;
+        if (seen.has(key(nsx, nsz))) continue;
+        if (!free(GX0 + nsx * STEP, GZ0 + nsz * STEP)) continue;
+        seen.add(key(nsx, nsz));
+        stack.push([nsx, nsz]);
+      }
+    }
+    // Every corridor cell must still hold a reached interior sample.
+    const per = Math.round(CELL / STEP); // 10
+    for (const [ix, iz] of corridorCells) {
+      let ok = false;
+      for (let a = 1; a < per && !ok; a++) {
+        for (let bb = 1; bb < per; bb++) {
+          if (seen.has(key(ix * per + a, iz * per + bb))) {
+            ok = true;
+            break;
+          }
+        }
+      }
+      if (!ok) {
+        blockedCells++;
+        if (bad.length < 4) {
+          bad.push(`f${m.f}: corridor cell (${ix},${iz}) unreachable — a prop chokes the corridor`);
+        }
       }
     }
   }
-  return bad;
+  return { bad, propCount, blockedCells };
 }
 
 /** Every doorway on a floor — room doors + the stair-core doors. */
@@ -828,7 +911,11 @@ export function verifyHospital(
     for (let i = counts.length; i < sections.length; i++) appended += sections[i].blocks.length;
     info.push(`interior + furnish appended: ${appended} blocks`);
     if (opts.floorMaps) {
-      push("corridor intrusions by furnish", findCorridorIntrusions(sections, counts, opts.floorMaps));
+      const circ = checkCorridorCirculation(sections, counts, opts.floorMaps);
+      for (const m of circ.bad) failures.push(m);
+      info.push(
+        `corridor dressing: ${circ.propCount} props · ${circ.blockedCells} corridor cells choked (want 0)`,
+      );
     }
   }
 

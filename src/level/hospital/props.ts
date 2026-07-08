@@ -523,6 +523,45 @@ export function deskItem(
   return [frame(x, z, facing)(mat, 0, topY, 0.3, 0.28, 0.04, 0.36)];
 }
 
+/** Wet-floor cone — 2 blocks: a base + a tapered body (box approximation).
+ *  Loose, floor-standing, hazard orange. */
+export function cone(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("accentOrange", 0, floorY, 0.2, 0.36, 0.06, 0.36), // splayed base
+    put("accentOrange", 0, floorY + 0.06, 0.2, 0.16, 0.52, 0.16), // body
+  ];
+}
+
+/** Fire extinguisher — 2 blocks: a red bottle + a metal valve head. Small,
+ *  floor-standing (a corridor stand rather than a wall bracket, so support
+ *  flows through the deck, not a maybe-cross-section wall). */
+export function extinguisher(x: number, floorY: number, z: number, facing: Facing): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("signRed", 0, floorY, 0.16, 0.26, 0.7, 0.26),
+    put("metal", 0, floorY + 0.7, 0.16, 0.1, 0.13, 0.1),
+  ];
+}
+
+/** Wayfinding sign pylon — 3 blocks: a slim post + two direction blades on
+ *  their own planes (upper blade in the floor's department colour). A
+ *  freestanding totem, so it reads as corridor signage without a wall mount. */
+export function signPylon(
+  x: number,
+  floorY: number,
+  z: number,
+  facing: Facing,
+  blade: MaterialId,
+): BlockDef[] {
+  const put = frame(x, z, facing);
+  return [
+    put("metal", 0, floorY, 0.16, 0.12, 1.7, 0.12), // post
+    put(blade, 0, floorY + 1.18, 0.22, 0.5, 0.3, 0.06), // department blade (proud)
+    put("propWhite", 0, floorY + 0.82, 0.22, 0.5, 0.28, 0.06), // lower blade
+  ];
+}
+
 /** Rooftop cross — 3 signRed blocks: post standing on the roof deck + two
  *  arms ABUTTING the post's sides (never an overlapping plus — intersecting
  *  same-size bars would put coplanar same-facing faces with real area). */
