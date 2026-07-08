@@ -230,15 +230,15 @@ export const GameConfig = {
   // Interior emergency lighting (systems/InteriorLights.ts). A small pool of
   // real point lights follows the player; unlimited emissive fixtures glow.
   interiorLights: {
-    range: 17, // m — point-light reach (nudged out with the furnish pass so a
-    // single pool light fills a furnished ward instead of pooling at the ceiling)
-    // Falloff eased (decay 1.8 → 1.55) and base raised so the newly FURNISHED
-    // rooms read clearly — the interior was legibly too dark once packed with
-    // equipment. Still a POOL of light with shadow between (not flat fill), and
-    // the exterior storm darkening (Atmosphere hemisphere/fog) is untouched, so
-    // this brightens interiors WITHOUT flattening the tornado mood outdoors.
-    baseIntensity: 74,
-    decay: 1.55,
+    range: 16, // m — point-light reach
+    // Modest lift over the original 54 for the FURNISHED rooms (equipment was
+    // eating the light), but the steep decay 1.8 is RESTORED after an over-bright
+    // first pass (74/1.55 read washed-out): keeps the scary POOL-of-light-with-
+    // shadow-between look rather than flat fill. The real dark-corridor fix was
+    // the fixture-run bug in partition.ts, not cranking this. Exterior storm
+    // darkening (Atmosphere hemisphere/fog) is untouched.
+    baseIntensity: 60,
+    decay: 1.8,
     flickerAmount: 0.62, // deeper, more unstable emergency flicker
     fixtureColor: 0x9fb08a, // sickly green-white emergency tint
     // A fixture with NO intact block this close to its housing has been
