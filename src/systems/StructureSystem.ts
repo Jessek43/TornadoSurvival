@@ -65,6 +65,10 @@ export interface RuntimeBlock {
   released: boolean;
   /** Per-block fixed body, created when the structure wakes. */
   body: RAPIER.RigidBody | null;
+  /** This block's collider inside the DORMANT compound body (null while awake,
+   *  where `body` owns the collider). Kept so a localized hit — a lightning
+   *  strike — can detach one block from a dormant section without waking it. */
+  dormantCollider: RAPIER.Collider | null;
 }
 
 export class StructureRuntime {
@@ -102,6 +106,7 @@ export class StructureSystem {
   // scratch
   private readonly windVec = new THREE.Vector3();
   private readonly spawnVel = new THREE.Vector3();
+  private readonly strikeVel = new THREE.Vector3();
   private readonly spawnAngVel = new THREE.Vector3();
   private readonly childCenter = new THREE.Vector3();
   private readonly childSize = new THREE.Vector3();
@@ -184,7 +189,7 @@ export class StructureSystem {
         color.setHex(MATERIALS[def.material].color).multiplyScalar(jitter);
         mesh.setColorAt(instanceId, color);
 
-        physics.world.createCollider(
+        const dormantCollider = physics.world.createCollider(
           RAPIER.ColliderDesc.cuboid(size.x / 2, size.y / 2, size.z / 2).setTranslation(
             center.x,
             center.y,
@@ -204,6 +209,7 @@ export class StructureSystem {
           touchesGround: center.y - size.y / 2 <= NEIGHBOR_EPS,
           released: false,
           body: null,
+          dormantCollider,
         });
       }
 
@@ -271,6 +277,93 @@ export class StructureSystem {
       }
     }
     return false;
+  }
+
+  /**
+   * LIGHTNING targeting: cast a vertical ray straight down through (x, z) and
+   * return the topmost intact block it passes through plus the world point on
+   * that block's top face. null = the column is empty → a GROUND strike. Walks
+   * the block list directly (no physics query) so it's deterministic and knows
+   * structure-vs-ground for free.
+   */
+  strikeRaycastDown(x: number, z: number): { point: THREE.Vector3; structure: StructureRuntime } | null {
+    let bestTop = -Infinity;
+    let bestStructure: StructureRuntime | null = null;
+    for (const s of this.structures) {
+      if (Math.hypot(x - s.center.x, z - s.center.z) > s.radius) continue;
+      for (const block of s.blocks) {
+        if (block.released) continue;
+        if (Math.abs(x - block.center.x) > block.size.x / 2) continue;
+        if (Math.abs(z - block.center.z) > block.size.z / 2) continue;
+        const top = block.center.y + block.size.y / 2;
+        if (top > bestTop) {
+          bestTop = top;
+          bestStructure = s;
+        }
+      }
+    }
+    if (!bestStructure) return null;
+    return { point: new THREE.Vector3(x, bestTop, z), structure: bestStructure };
+  }
+
+  /**
+   * LIGHTNING damage: break up to `maxBlocks` intact blocks within `radius` of
+   * `point` (nearest first), flung outward+down at `impulse`. Reuses the same
+   * per-block release() + support-collapse + break-audio path as a wind sweep —
+   * releasing a dormant section's blocks detaches their colliders in place (see
+   * release), so no section wake / re-sleep churn is needed for a one-off hit.
+   *
+   * Returns the count DIRECTLY destroyed (≤ maxBlocks). Any further collapse
+   * from lost support is the structure system's own realism and is bounded by
+   * the global debris budget (DebrisManager evicts before every spawn), so a
+   * strike can never exhaust that pool.
+   */
+  strikeDamage(
+    point: THREE.Vector3,
+    radius: number,
+    impulse: number,
+    maxBlocks: number,
+    time: number,
+  ): number {
+    const r2 = radius * radius;
+    const hits: { s: StructureRuntime; block: RuntimeBlock; d2: number }[] = [];
+    for (const s of this.structures) {
+      if (Math.hypot(point.x - s.center.x, point.z - s.center.z) > s.radius + radius) continue;
+      for (const block of s.blocks) {
+        if (block.released) continue;
+        const ex = Math.max(Math.abs(point.x - block.center.x) - block.size.x / 2, 0);
+        const ey = Math.max(Math.abs(point.y - block.center.y) - block.size.y / 2, 0);
+        const ez = Math.max(Math.abs(point.z - block.center.z) - block.size.z / 2, 0);
+        const d2 = ex * ex + ey * ey + ez * ez;
+        if (d2 <= r2) hits.push({ s, block, d2 });
+      }
+    }
+    if (hits.length === 0) return 0;
+    hits.sort((a, b) => a.d2 - b.d2);
+    const n = Math.min(hits.length, maxBlocks); // hard per-strike cap
+
+    const affected = new Set<StructureRuntime>();
+    let destroyed = 0;
+    for (let i = 0; i < n; i++) {
+      const { s, block } = hits[i];
+      if (block.released) continue; // may have been stranded by a prior release
+      // Outward from the impact + a downward bias, so blocks blast off the face.
+      this.strikeVel.set(
+        block.center.x - point.x,
+        block.center.y - point.y,
+        block.center.z - point.z,
+      );
+      if (this.strikeVel.lengthSq() < 1e-4) this.strikeVel.set(0, -1, 0);
+      this.strikeVel.normalize().multiplyScalar(impulse);
+      this.strikeVel.y -= impulse * 0.3;
+      this.release(s, block, 0, /* windThrown */ false, this.strikeVel);
+      affected.add(s);
+      destroyed++;
+    }
+    // Reuse the sweep tail: drop anything the blast left unsupported + one crash.
+    for (const s of affected) this.collapseUnsupported(s, time);
+    if (destroyed > 0) this.onBreak?.(destroyed);
+    return destroyed;
   }
 
   update(dt: number, time: number): void {
@@ -427,6 +520,7 @@ export class StructureSystem {
       s.compoundBody = null;
     }
     for (const block of s.blocks) {
+      block.dormantCollider = null; // went out with the compound body
       if (block.released) continue; // already debris — no body (matters on re-wake)
       const body = this.physics.world.createRigidBody(
         RAPIER.RigidBodyDesc.fixed().setTranslation(
@@ -459,7 +553,7 @@ export class StructureSystem {
         this.physics.world.removeRigidBody(block.body);
         block.body = null;
       }
-      this.physics.world.createCollider(
+      block.dormantCollider = this.physics.world.createCollider(
         RAPIER.ColliderDesc.cuboid(
           block.size.x / 2,
           block.size.y / 2,
@@ -507,12 +601,19 @@ export class StructureSystem {
     block: RuntimeBlock,
     pressure: number,
     windThrown: boolean,
+    velOverride?: THREE.Vector3,
   ): void {
     block.released = true;
     s.releasedCount++;
     if (block.body) {
       this.physics.world.removeRigidBody(block.body);
       block.body = null;
+    } else if (block.dormantCollider) {
+      // Dormant section (e.g. a lightning hit outside the wake radius): detach
+      // just this block's collider from the shared compound so no invisible
+      // collider is left behind — no need to wake the whole section.
+      this.physics.world.removeCollider(block.dormantCollider, false);
+      block.dormantCollider = null;
     }
     block.mesh.setMatrixAt(block.instanceId, StructureSystem.ZERO_SCALE);
     block.mesh.instanceMatrix.needsUpdate = true;
@@ -528,8 +629,11 @@ export class StructureSystem {
     }
 
     // Initial throw: a bite of the local wind plus randomness so a wall
-    // doesn't peel off as one rigid sheet of parallel blocks.
-    if (windThrown) {
+    // doesn't peel off as one rigid sheet of parallel blocks. A velOverride
+    // (a lightning strike's outward blast) takes precedence over both.
+    if (velOverride) {
+      this.spawnVel.copy(velOverride);
+    } else if (windThrown) {
       this.spawnVel
         .copy(this.windVec)
         .multiplyScalar(0.3)
