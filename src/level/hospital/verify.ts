@@ -502,6 +502,45 @@ function checkCorridors(map: FloorMap): string[] {
 }
 
 /**
+ * STAIR-CORE ENCLOSURE — every shaft is walled off from the floor on all sides,
+ * with EXACTLY ONE doorway per floor that opens onto the corridor lobby (so the
+ * flood-fill reaches the stairs). Counts walkable↔core edges that carry no wall
+ * in the emitted geometry: must be exactly one per core, and its open side must
+ * be a corridor.
+ */
+function checkStairCores(map: FloorMap, wallEdges: Set<string>): { bad: string[]; doors: number } {
+  const bad: string[] = [];
+  let doors = 0;
+  for (const v of voidCellBounds()) {
+    let open = 0;
+    let outsideCorridor = false;
+    for (let ix = v.ix0; ix <= v.ix1; ix++) {
+      for (let iz = v.iz0; iz <= v.iz1; iz++) {
+        if (cellKindAt(map, ix, iz) !== Cell.CORE) continue;
+        for (const [dx, dz] of NEI) {
+          const nx = ix + dx;
+          const nz = iz + dz;
+          if (!isWalkable(cellKindAt(map, nx, nz))) continue; // only walkable faces
+          const key =
+            dx === 1 ? `v:${ix}:${iz}` : dx === -1 ? `v:${nx}:${iz}` : dz === 1 ? `h:${ix}:${iz}` : `h:${ix}:${nz}`;
+          if (!wallEdges.has(`${map.f}:${key}`)) {
+            open++;
+            outsideCorridor = cellKindAt(map, nx, nz) === Cell.CORRIDOR;
+          }
+        }
+      }
+    }
+    if (open !== 1) {
+      bad.push(`f${map.f}: stair core has ${open} open walkable edges (want exactly 1 doorway)`);
+    } else {
+      doors++;
+      if (!outsideCorridor) bad.push(`f${map.f}: stair doorway does not open onto a corridor`);
+    }
+  }
+  return { bad, doors };
+}
+
+/**
  * ENTERABILITY — the furnished half of "you can walk into every room": the door
  * volume is clear and a capsule-inflated flood-fill from just inside the door
  * reaches enough free floor. Generalised to a door on any of the four walls.
@@ -760,15 +799,18 @@ export function verifyHospital(
     const wallEdges = collectWallEdges(boxes);
     let unreachTotal = 0;
     let openTotal = 0;
+    let coreDoorTotal = 0;
     const summary: string[] = [];
     for (const map of opts.floorMaps) {
       const reach = checkReachability(map);
       const enc = checkEnclosure(map, wallEdges);
       const reg = checkRegions(map);
       const corr = checkCorridors(map);
+      const cores = checkStairCores(map, wallEdges);
       unreachTotal += reach.unreachableRooms;
       openTotal += enc.openEdges;
-      for (const m of [...reach.bad, ...enc.bad.slice(0, 2), ...reg.bad, ...corr]) failures.push(m);
+      coreDoorTotal += cores.doors;
+      for (const m of [...reach.bad, ...enc.bad.slice(0, 2), ...reg.bad, ...corr, ...cores.bad]) failures.push(m);
       // Compact signature fingerprint so distinct routings are visible per line.
       let h = 0;
       for (let k = 0; k < map.signature.length; k++) h = (h * 31 + map.signature.charCodeAt(k)) | 0;
@@ -780,6 +822,7 @@ export function verifyHospital(
       );
     }
     info.push(`partition: unreachable rooms ${unreachTotal}, un-walled edges ${openTotal}`);
+    info.push(`stair cores: ${coreDoorTotal} enclosed with exactly one doorway (want ${opts.floorMaps.length * voidCellBounds().length})`);
     for (const line of summary) info.push(line);
 
     // Fix 3 — door headers: no open cells above any doorway (all floors).

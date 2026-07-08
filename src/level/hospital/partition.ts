@@ -13,6 +13,7 @@ import {
   inUsable,
   isCoreCell,
   exteriorInnerBounds,
+  voidCellBounds,
   type CellRect,
 } from "./grid";
 import { block, type HospitalShell } from "./shell";
@@ -115,6 +116,7 @@ export interface PartitionResult {
 
 const idx = (ix: number, iz: number): number => ix * NZ + iz;
 const inGrid = (ix: number, iz: number): boolean => ix >= 0 && ix < NX && iz >= 0 && iz < NZ;
+const NEI4: readonly [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 /** Cell kind at (ix,iz), or OUTSIDE off-grid — the read verify shares. */
 export const cellKindAt = (map: FloorMap, ix: number, iz: number): Cell =>
@@ -329,6 +331,26 @@ function assignDoors(map: FloorMap): void {
   }
 }
 
+/**
+ * Cut ONE doorway per stair core per floor, on the shaft's OPEN side and at the
+ * LANDING row, so the player steps from the corridor through the door onto the
+ * stairs. The rest of the core perimeter is walled by needsWall; this just
+ * opens the single edge (added to doorEdges + recorded for its header). The
+ * open side + landing row are read from the fixed void geometry — never moved.
+ */
+function addCoreDoors(map: FloorMap): void {
+  for (const v of voidCellBounds()) {
+    const cx = (cellX0(v.ix0) + cellX0(v.ix1 + 1)) / 2; // shaft centre x
+    const midIz = v.iz1; // front row of the void = the landing the flight arrives on
+    // Open side faces the building centre: east for the west shaft, west for the east.
+    const edge = cx < 0 ? v.ix1 : v.ix0 - 1;
+    const outside = cx < 0 ? v.ix1 + 1 : v.ix0 - 1;
+    if (cellKindAt(map, outside, midIz) !== Cell.CORRIDOR) continue; // no lobby to open onto
+    map.doorEdges.add(`v:${edge}:${midIz}`);
+    map.coreDoors.push({ axis: "x", mid: midIz, edge });
+  }
+}
+
 /** Apply the spec's targeted content overrides + the single-kitchen rule
  *  (deterministic: the first matching room in carve order). */
 function applyContentOverrides(map: FloorMap, spec: FloorSpec): void {
@@ -385,6 +407,20 @@ export function expandFloor(f: number, spec: FloorSpec): FloorMap {
   };
 
   rasterizeCorridors(kind, spec.corridors);
+  // STAIR-LOBBY RING — force a 1-cell corridor buffer around every core so no
+  // room ever abuts the shaft: the core is then walled entirely against
+  // circulation (one doorway per floor), and furniture never meets a core wall.
+  for (let ix = 0; ix < NX; ix++) {
+    for (let iz = 0; iz < NZ; iz++) {
+      if (kind[idx(ix, iz)] !== Cell.BLOCKED) continue;
+      for (const [dx, dz] of NEI4) {
+        if (inGrid(ix + dx, iz + dz) && kind[idx(ix + dx, iz + dz)] === Cell.CORE) {
+          kind[idx(ix, iz)] = Cell.CORRIDOR;
+          break;
+        }
+      }
+    }
+  }
   for (let i = 0; i < kind.length; i++) if (kind[i] === Cell.CORRIDOR) map.corridorCells++;
 
   for (let gx = 0; gx < P.colFloors.length; gx++) {
@@ -393,6 +429,7 @@ export function expandFloor(f: number, spec: FloorSpec): FloorMap {
     }
   }
   assignDoors(map);
+  addCoreDoors(map);
   applyContentOverrides(map, spec);
   map.signature = signature(map);
   return map;
@@ -416,9 +453,13 @@ function needsWall(map: FloorMap, ax: number, az: number, bx: number, bz: number
   const ka = map.kind[idx(ax, az)];
   const kb = map.kind[idx(bx, bz)];
   if (ka === Cell.OUTSIDE || kb === Cell.OUTSIDE) return false; // exterior/step wall
-  if (ka === Cell.CORE || kb === Cell.CORE) return false; // stairwell owns it
-  const walkable = ka === Cell.CORRIDOR || ka === Cell.ROOM || kb === Cell.CORRIDOR || kb === Cell.ROOM;
-  if (!walkable) return false; // poché ↔ poché: no walkable face
+  const aWalk = ka === Cell.CORRIDOR || ka === Cell.ROOM;
+  const bWalk = kb === Cell.CORRIDOR || kb === Cell.ROOM;
+  // Wrap the stair core: a wall wherever the void meets a walkable cell (the
+  // one doorway per floor is carved out via doorEdges). Core↔core / core↔poché
+  // need no wall (the shell stairwell + poché own those).
+  if (ka === Cell.CORE || kb === Cell.CORE) return aWalk || bWalk;
+  if (!aWalk && !bWalk) return false; // poché ↔ poché: no walkable face
   return regionId(map.kind, map.roomId, ax, az) !== regionId(map.kind, map.roomId, bx, bz);
 }
 
