@@ -14,18 +14,23 @@ import {
 } from "postprocessing";
 import type { QualitySettings } from "../config/QualitySettings";
 import type { TornadoSystem } from "./TornadoSystem";
+// The storm sky panorama (assets/images/storm_texture.png). Imported so Vite
+// bundles + hashes it; it becomes the scene background (mapped onto the sky
+// dome, equirectangular) in place of the old procedural gradient.
+import stormTextureUrl from "../../assets/images/storm_texture.png";
 
 /**
  * Everything mood — this file is where "Teardown, not Roblox" happens.
  *
- *  - A gradient STORM SKY DOME: green-black at the zenith easing to a
- *    lighter desaturated grey-green at the horizon, with faint drifting
- *    cloud mottling. A flat background color read as one dead-black mass;
- *    the gradient gives the scene cheap depth and a horizon to silhouette
- *    against.
- *  - Heavy exponential fog whose color matches the HORIZON (not the black
- *    zenith), so distance fades to haze — depth — instead of to black. Fog
- *    is doing double duty: dread device AND draw-distance limiter.
+ *  - A STORM SKY DOME textured with the storm panorama
+ *    (assets/images/storm_texture.png), sampled equirectangularly and drifting
+ *    slowly so it reads as a live cloud mass. It's the scene background: the
+ *    dome follows the camera and is drawn first, so looking around reveals the
+ *    panorama while moving keeps it fixed to the world. The lightning washes
+ *    below still layer on top of it.
+ *  - Heavy exponential fog (desaturated grey) so distance fades to haze —
+ *    depth — instead of to black. Fog is doing double duty: dread device AND
+ *    draw-distance limiter.
  *  - A slanted directional "storm light" (the only shadow caster) plus a
  *    cool hemisphere fill bright enough to keep shadowed faces readable —
  *    moody, not pitch-dark.
@@ -44,16 +49,9 @@ import type { TornadoSystem } from "./TornadoSystem";
  * buffers) — grain + hard shake + chromatic aberration sell the violence.
  */
 
-// Sky palette — grounded storm look (the [STORM-SKY] reference): a charcoal
-// blue-grey cloud mass overhead with real tonal depth, a BRIGHT dramatic band
-// low on the horizon (late-afternoon light under the shelf cloud), and the
-// sickly tornado-green demoted to an ACCENT near the cloud base — not a wash
-// over the whole scene.
-const SKY_ZENITH = 0x14171c; // charcoal blue-grey overhead
-const SKY_HORIZON = 0x565c60; // clearly brighter desaturated grey at the horizon
-const HORIZON_GLOW = 0x9c8f74; // warm band right at the horizon line
-const GREEN_ACCENT = 0x4d5a42; // tornado-green, cloud-base accent only
-// Fog matches the horizon so the world dissolves into the sky, not into black.
+// The sky dome now shows the storm PANORAMA (stormTextureUrl) instead of a
+// procedural gradient; the lightning washes below still layer on top of it.
+// Fog stays a desaturated grey so the world dissolves into haze, not into black.
 const FOG_COLOR = 0x3b4043;
 // Flash tint recolored to a pale blue-white to match the new palette (a
 // CONSTANT — the flash implementation/timing/intensity is untouched).
@@ -111,12 +109,17 @@ export class Atmosphere {
     // never reached. Rendered first, behind everything, and NOT fogged (the
     // sky shouldn't fade into its own fog).
     const radius = Math.min(quality.drawDistance * 0.9, 360);
+    // The storm panorama, sampled equirectangularly in the dome shader. sRGB so
+    // the GPU decodes it to linear on sample (matches the linear HDR buffer the
+    // post chain tone-maps); RepeatWrapping so the longitude seam wraps cleanly.
+    const stormTex = new THREE.TextureLoader().load(stormTextureUrl);
+    stormTex.colorSpace = THREE.SRGBColorSpace;
+    stormTex.wrapS = THREE.RepeatWrapping;
+    stormTex.wrapT = THREE.ClampToEdgeWrapping;
+    stormTex.anisotropy = 4;
     this.skyMat = new THREE.ShaderMaterial({
       uniforms: {
-        uZenith: { value: new THREE.Color(SKY_ZENITH) },
-        uHorizon: { value: new THREE.Color(SKY_HORIZON) },
-        uGlow: { value: new THREE.Color(HORIZON_GLOW) },
-        uGreen: { value: new THREE.Color(GREEN_ACCENT) },
+        uSky: { value: stormTex },
         uFlashColor: { value: this.flashColor },
         uFlash: { value: 0 },
         uBgFlash: { value: 0 },
@@ -275,10 +278,7 @@ const SKY_VERT = /* glsl */ `
 `;
 
 const SKY_FRAG = /* glsl */ `
-  uniform vec3 uZenith;
-  uniform vec3 uHorizon;
-  uniform vec3 uGlow;
-  uniform vec3 uGreen;
+  uniform sampler2D uSky;
   uniform vec3 uFlashColor;
   uniform float uFlash;
   uniform float uBgFlash;
@@ -286,44 +286,25 @@ const SKY_FRAG = /* glsl */ `
   uniform float uTime;
   varying vec3 vDir;
 
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
-  float vnoise(vec2 p) {
-    vec2 i = floor(p), f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-               mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
-  }
-  float fbm(vec2 p) {
-    return vnoise(p) * 0.5 + vnoise(p * 2.13) * 0.3 + vnoise(p * 4.31) * 0.2;
-  }
+  const float PI = 3.14159265;
 
   void main() {
-    // Vertical gradient: 0 at/below the horizon → 1 overhead.
-    float h = smoothstep(-0.12, 0.7, vDir.y);
-    vec3 col = mix(uHorizon, uZenith, h);
+    vec3 dir = normalize(vDir);
+    // Equirectangular sample of the storm panorama. A very slow longitude drift
+    // keeps the cloud mass alive rather than a frozen backdrop (RepeatWrapping
+    // makes the drift + the ±PI seam wrap cleanly). uSky is sRGB → the sample
+    // is already linear, matching the HDR buffer the post chain tone-maps.
+    vec2 uv = vec2(
+      atan(dir.z, dir.x) / (2.0 * PI) + 0.5 + uTime * 0.0015,
+      clamp(asin(clamp(dir.y, -1.0, 1.0)) / PI + 0.5, 0.0, 1.0)
+    );
+    vec3 col = texture2D(uSky, uv).rgb;
 
-    // Cloud mottling — strengthened for real tonal depth in the charcoal
-    // mass (the reference sky is heavy TEXTURE, not a flat wash).
-    vec2 st = vDir.xz / max(abs(vDir.y) + 0.35, 0.35);
-    float clouds = fbm(st * 2.2 + vec2(uTime * 0.01, uTime * 0.006));
-    col *= 1.0 + (clouds - 0.5) * 0.34 * (1.0 - h * 0.45);
-
-    // Tornado-green as an ACCENT near the cloud base only (a sickly tint in
-    // the band just above the horizon), not smeared over the whole dome.
-    float gband = smoothstep(0.0, 0.07, vDir.y) * smoothstep(0.34, 0.10, vDir.y);
-    col = mix(col, uGreen, gband * 0.30);
-
-    // The bright dramatic band right at the horizon — the warm late-afternoon
-    // light escaping under the shelf cloud. Gives the sky depth and the
-    // buildings something to silhouette against.
-    col += uGlow * exp(-abs(vDir.y) * 6.5) * 0.5;
-
-    // BACKGROUND lightning: a dim far-off flash lights the cloud base in one
-    // azimuth sector; modulating by inverted mottling silhouettes the cloud
-    // layers against the lit backdrop. Cheap — a few ALU ops on the dome only.
-    float sector = smoothstep(0.15, 0.95, dot(normalize(vDir.xz + vec2(1e-4)), uBgFlashDir));
-    float low = exp(-max(vDir.y, 0.0) * 5.0);
-    col += uFlashColor * uBgFlash * sector * low * (0.5 + 0.6 * (1.0 - clouds)) * 0.4;
+    // BACKGROUND lightning: a dim far-off flash lifts the cloud base in one
+    // azimuth sector near the horizon. Cheap — a few ALU ops on the dome only.
+    float sector = smoothstep(0.15, 0.95, dot(normalize(dir.xz + vec2(1e-4)), uBgFlashDir));
+    float low = exp(-max(dir.y, 0.0) * 5.0);
+    col += uFlashColor * uBgFlash * sector * low * 0.5;
 
     // CLOSE lightning wash — identical strength/timing to before.
     col = mix(col, uFlashColor, uFlash * 0.6);
