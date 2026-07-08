@@ -240,8 +240,9 @@ export class LightningSystem {
       this.addScorch(px, pz);
     }
 
-    // Loud immediate CRACK (the impact) + the rolling thunder behind it.
-    this.audio.strikeCrack(cfg.impactVolume);
+    // The strike sound = the same deep rumble as the ambient sky-flash thunder,
+    // just LOUDER (thunderVolume) and prompter (thunderDelayMs) — no separate
+    // "crack" layer, which read as an electric zap.
     this.audio.thunder(cfg.thunderVolume, cfg.thunderDelayMs);
     this.lastStrike = { x: px, y: py, z: pz, ground, destroyed };
   }

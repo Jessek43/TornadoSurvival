@@ -76,13 +76,11 @@ export interface LightningConfigT {
   maxBlocksPerStrike: number;
 
   // --- audio ---
-  /** IMMEDIATE loud crack/boom at the moment of the flash (AudioSystem.strikeCrack)
-   *  — the sharp "impact" of the bolt landing, distinct from the rolling thunder. */
-  impactVolume: number;
-  /** The rolling thunder one-shot that follows (AudioSystem.thunder). */
+  /** Strike volume for AudioSystem.thunder — the SAME deep rumble as the ambient
+   *  sky-flash thunder (which peaks ~0.35–0.65), just louder for a close strike. */
   thunderVolume: number;
-  /** Delay from flash to the thunder one-shot (ms). 0 = paired with the flash;
-   *  >0 = the realistic light-then-sound gap. */
+  /** Delay from flash to the rumble (ms). 0 = paired with the flash; >0 = the
+   *  light-then-sound gap (short here — strikes are close). */
   thunderDelayMs: number;
 
   // --- extra tunables (kept here so nothing is hard-coded in the system) ---
@@ -136,9 +134,8 @@ export const LightningConfig: LightningConfigT = {
   damageImpulse: 18,
   maxBlocksPerStrike: 22,
 
-  impactVolume: 0.95,
-  thunderVolume: 0.7,
-  thunderDelayMs: 180,
+  thunderVolume: 1.0, // ~2× the ambient rumble's average peak → clearly louder
+  thunderDelayMs: 120,
 
   cloudHeight: 150,
   targetAreaRadius: 130,

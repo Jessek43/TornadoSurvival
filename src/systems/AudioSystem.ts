@@ -172,108 +172,36 @@ export class AudioSystem {
   }
 
   /**
-   * The ROLLING thunder tail — a long, deep, lowpassed rumble that swells and
-   * fades irregularly (a slow tremolo LFO on the gain) so it reads as distant
-   * reflections rolling away, not a flat noise fade.
+   * Thunder — a long lowpassed brown-noise rumble (the deep, soft roll of the
+   * ambient sky flashes). This is the "background lightning" voice; a positioned
+   * STRIKE is just the same rumble at a louder, fixed volume and a shorter
+   * light-then-sound gap (LightningSystem passes volume/delayMs).
    *
-   * Called two ways — with no args by Atmosphere's ambient mood flasher (a
-   * random 0.2–1.2 s light-then-sound gap and a random 0.35–0.65 peak), and
-   * with (volume, delayMs) by LightningSystem so a positioned strike can pin its
-   * loudness and light-then-sound delay from LightningConfig.
+   * Called with no args by Atmosphere's ambient mood flasher (a random
+   * 0.2–1.2 s gap and a random 0.35–0.65 peak — unchanged).
    */
   thunder(volume?: number, delayMs?: number): void {
     if (!this.ctx) return;
     const ctx = this.ctx;
     const delay = delayMs !== undefined ? delayMs / 1000 : 0.2 + Math.random(); // light beats sound
     const start = ctx.currentTime + delay;
-    const dur = 2.2 + Math.random() * 2.2; // long rolling tail
+    const dur = 1.5 + Math.random() * 1.5;
     const peak = volume !== undefined ? volume : 0.35 + Math.random() * 0.3;
 
     const src = ctx.createBufferSource();
     src.buffer = this.brownBuffer;
-    src.loop = true; // fill the long tail from the 2 s buffer
-    src.playbackRate.value = 0.5 + Math.random() * 0.25;
+    src.playbackRate.value = 0.6 + Math.random() * 0.3;
     const filter = ctx.createBiquadFilter();
     filter.type = "lowpass";
-    filter.frequency.setValueAtTime(350, start);
-    filter.frequency.exponentialRampToValueAtTime(70, start + dur);
-
-    // Rolling: a slow, shallow tremolo (±35%) around unity so the rumble
-    // undulates like successive claps rolling past, rather than a smooth decay.
-    const roll = ctx.createGain();
-    roll.gain.value = 1;
-    const lfo = ctx.createOscillator();
-    lfo.type = "sine";
-    lfo.frequency.value = 1.6 + Math.random() * 2.4;
-    const lfoAmt = ctx.createGain();
-    lfoAmt.gain.value = 0.35;
-    lfo.connect(lfoAmt).connect(roll.gain);
-
-    // Overall attack/decay envelope of the tail.
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0, start);
-    env.gain.linearRampToValueAtTime(peak, start + 0.08);
-    env.gain.exponentialRampToValueAtTime(0.001, start + dur);
-
-    src.connect(filter).connect(roll).connect(env).connect(this.master);
-    lfo.start(start);
-    lfo.stop(start + dur + 0.1);
+    filter.frequency.setValueAtTime(400, start);
+    filter.frequency.exponentialRampToValueAtTime(90, start + dur);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(peak, start + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    src.connect(filter).connect(gain).connect(this.master);
     src.start(start, Math.random());
     src.stop(start + dur + 0.1);
-  }
-
-  /**
-   * The IMMEDIATE thunderclap of a bolt landing (LightningSystem, paired with
-   * the flash) — the sharp near part of a real close strike, before the rolling
-   * `thunder()` tail. Two layers, NOT a bright electric "zap":
-   *
-   *  - the CRACK/RIP: a fast broadband burst that DARKENS immediately (lowpass
-   *    snaps ~5 kHz → ~400 Hz in ~120 ms), so the sharpness is a transient snap
-   *    rather than sustained high-frequency hiss (what made it sound like a zap);
-   *  - the CONCUSSION: a deep chest-thump underneath, lowpass sweeping into
-   *    sub-bass with a slower decay — the "boom" you feel.
-   */
-  strikeCrack(volume = 0.95): void {
-    if (!this.ctx) return;
-    const ctx = this.ctx;
-    const now = ctx.currentTime;
-
-    // CRACK — brown noise (deep, not hissy) through a lowpass that snaps shut,
-    // plus a gentle highpass so it stays articulate instead of muddy. Near-
-    // instant attack; the fast darkening is what reads as a real thunder "krak".
-    const crack = ctx.createBufferSource();
-    crack.buffer = this.brownBuffer;
-    crack.playbackRate.value = 1.0 + Math.random() * 0.2;
-    const crackHp = ctx.createBiquadFilter();
-    crackHp.type = "highpass";
-    crackHp.frequency.value = 90;
-    const crackLp = ctx.createBiquadFilter();
-    crackLp.type = "lowpass";
-    crackLp.frequency.setValueAtTime(5000, now);
-    crackLp.frequency.exponentialRampToValueAtTime(400, now + 0.12);
-    const crackGain = ctx.createGain();
-    crackGain.gain.setValueAtTime(0, now);
-    crackGain.gain.linearRampToValueAtTime(volume, now + 0.004); // sharp attack
-    crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
-    crack.connect(crackHp).connect(crackLp).connect(crackGain).connect(this.master);
-    crack.start(now, Math.random());
-    crack.stop(now + 0.36);
-
-    // CONCUSSION — the deep body punch, lowpass sweeping down into sub-bass.
-    const boom = ctx.createBufferSource();
-    boom.buffer = this.brownBuffer;
-    boom.playbackRate.value = 0.7;
-    const boomLp = ctx.createBiquadFilter();
-    boomLp.type = "lowpass";
-    boomLp.frequency.setValueAtTime(320, now);
-    boomLp.frequency.exponentialRampToValueAtTime(45, now + 0.6);
-    const boomGain = ctx.createGain();
-    boomGain.gain.setValueAtTime(0, now);
-    boomGain.gain.linearRampToValueAtTime(volume, now + 0.02);
-    boomGain.gain.exponentialRampToValueAtTime(0.001, now + 0.95);
-    boom.connect(boomLp).connect(boomGain).connect(this.master);
-    boom.start(now, Math.random());
-    boom.stop(now + 1.0);
   }
 
   /** A heartbeat: two low sine thumps ("lub-dub"), louder when very close. */
