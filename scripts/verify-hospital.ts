@@ -6,6 +6,7 @@
 //  - bare shell:  what `?bare` measures (the Phase-1 perf baseline)
 //  - detailed:    palette decks + the furnish pass
 import { buildShell } from "../src/level/hospital/shell";
+import { partitionHospital } from "../src/level/hospital/partition";
 import { furnish, DECK_PALETTE } from "../src/level/hospital/furnish";
 import { verifyHospital } from "../src/level/hospital/verify";
 import { buildNeighborhood } from "../src/level/Neighborhood";
@@ -13,12 +14,15 @@ import { buildNeighborhood } from "../src/level/Neighborhood";
 let failures = 0;
 
 function run(label: string, detail: boolean): void {
-  const shell = buildShell(detail ? { deckMaterial: DECK_PALETTE } : {});
-  const furnished = detail ? furnish(shell) : undefined;
+  const shell = buildShell(detail ? { deckMaterial: DECK_PALETTE, interiorColumns: false } : {});
+  const shellCounts = detail ? shell.sections.map((s) => s.blocks.length) : undefined;
+  const partition = detail ? partitionHospital(shell) : undefined;
+  if (detail && partition) furnish(shell, partition.rooms);
   const result = verifyHospital(shell.sections, shell.lightFixtures, shell.exteriorFaces, {
     neighborhood: buildNeighborhood(),
-    shellCounts: furnished?.shellCounts,
-    rooms: furnished?.rooms,
+    shellCounts,
+    rooms: partition?.rooms,
+    floorMaps: partition?.floorMaps,
   });
   console.log(`--- ${label} ---`);
   for (const line of result.info) console.log(line);

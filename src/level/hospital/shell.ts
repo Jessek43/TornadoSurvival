@@ -9,7 +9,6 @@ import {
   clipRectToVoids,
   deckTopY,
   inCorridor,
-  inRib,
   overlapsVoid,
   roofTopY,
   wallBaseY,
@@ -20,24 +19,22 @@ import {
 } from "./params";
 
 /**
- * PHASE 1 — the hospital's bare structural shell.
+ * PHASE 1 — the hospital's bare structural shell (envelope + cores only).
  *
  * Everything here is generated from HOSPITAL_PARAMS / the derived grid in
- * params.ts, in a strict order per wing: deck → columns → exterior walls →
- * interior walls → fixtures, then roof. Detailing (floor archetypes, props,
- * palettes — Phase 2) is a separate, strictly ADDITIVE furnish pass that only
- * appends blocks to these sections; the shell must stand on its own.
+ * params.ts, in a strict order per wing: deck → columns → exterior walls, then
+ * roof. The INTERIOR (per-floor rooms, corridors, doors) is deliberately NOT
+ * built here — it is a separate per-storey partition layer (partition.ts, from
+ * the authored plans in floorplans.ts) that appends into these sections, so
+ * every floor gets its own enclosure instead of one open plate. Detailing
+ * (props) is a further strictly-ADDITIVE furnish pass; the shell stands alone.
  *
- * The two z-fighting classes the old builder had are impossible here by
- * construction (verify.ts asserts coplanar-overlap count == 0):
- *  - DUPLICATED PARTITIONS: a wing boundary wall is now built by exactly one
- *    owner (the west wing builds its xMax partition; the east wing builds
- *    nothing there unless the face is an exterior massing step).
+ * The z-fighting class the old builder had is impossible here by construction
+ * (verify.ts asserts coplanar-overlap count == 0):
  *  - WALL TOPS ON DECK-TOP PLANES: walls and columns run deck-top →
  *    next-deck-BOTTOM (wallBaseY/wallTopY), so no wall top ever shares the
- *    walking plane. Crossing walls are opened by segment EXTENT (not center),
- *    so two runs never interpenetrate; z-runs stop at the inner face of the
- *    x-runs they meet.
+ *    walking plane. (The partition layer follows the same rule and abuts —
+ *    never overlaps — at every corner it emits.)
  *
  * Support contract (StructureSystem flood-fill): ground-storey walls/columns
  * reach y=0; every deck rests on the walls below it via exact plane contact;
@@ -59,6 +56,12 @@ export interface ShellOptions {
    *  which is what `?bare` measures. Roof decks are always cladding. All
    *  palette ids are physics clones of concrete, so this is color only. */
   deckMaterial?: (f: number, gx: number, gz: number) => MaterialId;
+  /** Wing-corner support columns. The BARE shell needs them (no interior
+   *  walls, so the inner-wing decks would otherwise float). The DETAILED build
+   *  omits them: the partition layer's per-floor room walls stand under the
+   *  decks and carry the support flood-fill, and free-standing corner columns
+   *  only collided with corner-room furniture. */
+  interiorColumns?: boolean;
 }
 
 /** Push a ceiling fixture; returns its index in the flat lightFixtures array
@@ -163,49 +166,6 @@ function addExteriorWall(
   }
 }
 
-/**
- * Interior wall run (cladding). Doorways on a per-run rhythm; `skipRange`
- * opens the wall wherever a crossing corridor's zone touches the SEGMENT'S
- * EXTENT — wide enough that this run can never interpenetrate the crossing
- * corridor's own walls.
- */
-export function addInteriorWall(
-  blocks: BlockDef[],
-  run: "x" | "z",
-  a0: number,
-  a1: number,
-  perp: number,
-  f: number,
-  doors: boolean,
-  skipRange?: (c0: number, c1: number) => boolean,
-): void {
-  const base = wallBaseY(f);
-  const h = wallTopY(f) - base;
-  const len = a1 - a0;
-  const n = Math.max(1, Math.round(len / P.seg));
-  const seg = len / n;
-  for (let i = 0; i < n; i++) {
-    if (doors && i % 3 === 1) continue; // doorway rhythm
-    const c = a0 + seg * (i + 0.5);
-    if (skipRange?.(c - seg / 2, c + seg / 2)) continue; // crossing corridor
-    const x = run === "x" ? c : perp;
-    const z = run === "x" ? perp : c;
-    const w = run === "x" ? seg : P.wallT;
-    const d = run === "x" ? P.wallT : seg;
-    if (overlapsVoid(x, z, w, d)) continue;
-    blocks.push(block("cladding", x, base, z, w, h, d));
-  }
-}
-
-// Crossing-corridor open zones, by segment extent. Margins comfortably cover
-// the crossing corridor's own wall planes (spineHW/ribHW + wallT/2) plus the
-// crossPad plaza, so an opened crossing is generous and overlap-free.
-// (Exported for the furnish pass — room walls obey the same open zones.)
-export const spineSkip = (c0: number, c1: number): boolean =>
-  c1 > P.spineZ - (P.spineHW + P.crossPad) && c0 < P.spineZ + (P.spineHW + P.crossPad);
-export const ribSkip = (c0: number, c1: number): boolean =>
-  P.ribX.some((rx) => c1 > rx - (P.ribHW + P.crossPad) && c0 < rx + (P.ribHW + P.crossPad));
-
 /** z-runs stop at the inner face of the envelope's front/back x-walls
  *  instead of poking into their corners. */
 function zRunSpan(gz: number): [number, number] {
@@ -220,13 +180,7 @@ function zRunSpan(gz: number): [number, number] {
 // every section must own).
 // ===========================================================================
 
-function buildWing(
-  gx: number,
-  gz: number,
-  addFixture: AddFixture,
-  faces: ExteriorFace[],
-  opts: ShellOptions,
-): SectionSpec {
+function buildWing(gx: number, gz: number, faces: ExteriorFace[], opts: ShellOptions): SectionSpec {
   const xMin = X_EDGES[gx];
   const xMax = X_EDGES[gx + 1];
   const zMin = Z_EDGES[gz];
@@ -236,9 +190,6 @@ function buildWing(
   const blocks: BlockDef[] = [];
   const back = gz === 0;
   const front = gz === P.rows - 1;
-  // Ribs strictly inside this wing (an edge rib like x=0 is a wall-free
-  // corridor zone, not a walled corridor — inRib suppresses walls there).
-  const innerRibs = P.ribX.filter((rx) => rx > xMin + 0.1 && rx < xMax - 0.1);
 
   for (let f = 0; f < floors; f++) {
     // DECK — one distinct plane per class (ground lift / floor line).
@@ -246,14 +197,18 @@ function buildWing(
 
     // COLUMNS — wing corners, inset fully clear of the boundary wall planes,
     // skipped in voids and corridors ("columns never obstruct circulation").
-    const colInset = P.wallT + 0.25;
-    for (const cx of [xMin + colInset, xMax - colInset]) {
-      for (const cz of [zMin + colInset, zMax - colInset]) {
-        if (overlapsVoid(cx, cz, 0.5, 0.5)) continue;
-        if (inCorridor(cx, cz)) continue;
-        blocks.push(
-          block("concrete", cx, wallBaseY(f), cz, 0.5, wallTopY(f) - wallBaseY(f), 0.5),
-        );
+    // Omitted in the detailed build (the partition's room walls support the
+    // decks instead — see ShellOptions.interiorColumns).
+    if (opts.interiorColumns !== false) {
+      const colInset = P.wallT + 0.25;
+      for (const cx of [xMin + colInset, xMax - colInset]) {
+        for (const cz of [zMin + colInset, zMax - colInset]) {
+          if (overlapsVoid(cx, cz, 0.5, 0.5)) continue;
+          if (inCorridor(cx, cz)) continue;
+          blocks.push(
+            block("concrete", cx, wallBaseY(f), cz, 0.5, wallTopY(f) - wallBaseY(f), 0.5),
+          );
+        }
       }
     }
 
@@ -282,51 +237,13 @@ function buildWing(
         gx === COLS - 1 ? "envelope" : "step", false,
       );
     }
-    // INTERIOR wing partition — owned by the WEST wing at its xMax only (the
-    // old builder had both neighbors emit this wall: identical coplanar
-    // blocks, the "flickering walls"). Suppressed where the boundary itself
-    // is a corridor zone (the x=0 entrance axis).
-    if (!extMaxX && !inRib(xMax)) {
-      addInteriorWall(blocks, "z", zr0, zr1, xMax, f, true, spineSkip);
-    }
-
-    // CORRIDOR walls inside this wing: spine edges (middle-row wings) and
-    // rib edges, opened generously where the perpendicular corridor crosses.
-    // Spine runs stop at the inner face of a CONTINUOUS boundary wall
-    // (exterior side/step faces); at partition boundaries they run to the
-    // edge — the partition is open across the spine zone, so the two wings'
-    // runs abut into one continuous corridor wall.
-    if (zMin < P.spineZ - P.spineHW && zMax > P.spineZ + P.spineHW) {
-      // Inset up to the boundary wall's inner face: envelope walls straddle
-      // the edge (inner face at +wallT/2); step walls sit flush inside
-      // (inner face at +wallT).
-      const sa0 = xMin + (extMinX ? (gx === 0 ? P.wallT / 2 : P.wallT) : 0);
-      const sa1 = xMax - (extMaxX ? (gx === COLS - 1 ? P.wallT / 2 : P.wallT) : 0);
-      for (const sz of [P.spineZ - P.spineHW, P.spineZ + P.spineHW]) {
-        addInteriorWall(blocks, "x", sa0, sa1, sz, f, true, ribSkip);
-      }
-    }
-    for (const rx of innerRibs) {
-      for (const rex of [rx - P.ribHW, rx + P.ribHW]) {
-        addInteriorWall(blocks, "z", zr0, zr1, rex, f, true, spineSkip);
-      }
-    }
-
-    // FIXTURES — recessed ceiling panels on a regular grid along the
-    // corridors + one room panel per outer-row wing. Position-only; runtime
-    // enclosure (InteriorLights + anyIntactBlockNear) governs their life.
-    const fy = f * P.floorHeight + P.floorHeight - P.ceilGap;
-    const add = (fx: number, fz: number): void => {
-      if (overlapsVoid(fx, fz)) return;
-      addFixture([fx, fy, fz]);
-    };
-    if (zMin < P.spineZ && zMax > P.spineZ) {
-      for (let sx = xMin + 3; sx < xMax; sx += 6) add(sx, P.spineZ);
-    }
-    for (const rx of innerRibs) {
-      for (let rz = zMin + 3; rz < zMax; rz += 6) add(rx, rz);
-    }
-    if (gz !== 1) add((xMin + xMax) / 2, (zMin + zMax) / 2 + (gz === 0 ? -4 : 4));
+    // INTERIOR partitioning is NO LONGER built here. The whole interior —
+    // per-floor rooms, corridors, doors and their ceiling fixtures — is erected
+    // by the partition layer (partition.ts) from the authored cell-grid plans
+    // (floorplans.ts) and APPENDED into this wing's section, so each storey gets
+    // its own enclosure instead of one open plate shared across every floor.
+    // The shell keeps only what is fixed for the whole column: deck, columns,
+    // exterior envelope/step walls, the stair cores, and the roof.
   }
 
   // ROOF — its own top plane (lift table), parapets and mechanical units
@@ -582,7 +499,7 @@ export function buildShell(opts: ShellOptions = {}): HospitalShell {
 
   for (let gx = 0; gx < COLS; gx++) {
     for (let gz = 0; gz < P.rows; gz++) {
-      sections.push(buildWing(gx, gz, addFixture, exteriorFaces, opts));
+      sections.push(buildWing(gx, gz, exteriorFaces, opts));
     }
   }
   sections.push(buildStairwell(P.stairs.xs[0], "A", addFixture, stairLights));

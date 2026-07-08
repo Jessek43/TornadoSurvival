@@ -1,5 +1,3 @@
-import type { RoomContent } from "./layouts";
-
 /**
  * The hospital's SIZE DIAL and derived spatial grid — the single source of
  * spatial truth for the whole building. Every generator in shell.ts (and the
@@ -200,34 +198,6 @@ export interface StairLight {
   floor: number;
   /** Human-readable mount target, e.g. "f3 landing" or "head roof". */
   mount: string;
-}
-
-/**
- * One furnished room, recorded by the furnish pass. verify.ts turns
- * ENTERABILITY into a build-time invariant with these: the door volume must
- * be empty, and a capsule-inflated flood-fill from the door must reach a
- * minimum free area (and, for facade rooms, the window wall).
- */
-export interface RoomSpec {
-  /** Interior clear rect (between wall inner faces), world coords. */
-  x0: number;
-  x1: number;
-  z0: number;
-  z1: number;
-  /** Wall-base y of the room's floor. */
-  base: number;
-  /** Doorway center x and the door wall's z plane. */
-  doorC: number;
-  doorWallZ: number;
-  /** z of the facade wall's inner face (windowed side) — facade rooms only. */
-  windowZ?: number;
-  kind: "facade" | "interior";
-  /** What the room is furnished as (drives the §4 kitchen/room-count asserts).
-   *  Includes the floor-unique interior types (lab / records). */
-  content: RoomContent;
-  /** Storey the room sits on (for the per-floor room-count report). */
-  floor: number;
-  name: string;
 }
 
 /** One exterior wall run, recorded by the shell as it builds. This registry

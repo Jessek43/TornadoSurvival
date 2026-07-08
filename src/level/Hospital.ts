@@ -1,5 +1,6 @@
 import type { SectionSpec } from "./Blueprints";
 import { buildShell } from "./hospital/shell";
+import { partitionHospital } from "./hospital/partition";
 import { furnish, DECK_PALETTE } from "./hospital/furnish";
 import { verifyHospital } from "./hospital/verify";
 import type { Fixture, StairLight } from "./hospital/params";
@@ -21,16 +22,25 @@ import type { Fixture, StairLight } from "./hospital/params";
  *
  * `detail: false` (the `?bare` URL switch) builds the Phase-1 structural
  * shell only — the perf-gate A/B measurement mode. With `detail`, decks take
- * the per-floor palette and the furnish pass decorates the floors (ward
- * slice implemented; treatment/lobby/exterior land after the ward gate).
+ * the per-floor palette, the partition layer erects the per-floor enclosed
+ * rooms + corridors, and the furnish pass dresses them.
  */
 export function buildHospital(opts: { detail?: boolean } = {}): {
   sections: SectionSpec[];
   lightFixtures: Fixture[];
   stairLights: StairLight[];
 } {
-  const shell = buildShell(opts.detail ? { deckMaterial: DECK_PALETTE } : {});
-  const furnished = opts.detail ? furnish(shell) : undefined;
+  const shell = buildShell(opts.detail ? { deckMaterial: DECK_PALETTE, interiorColumns: false } : {});
+
+  let shellCounts: number[] | undefined;
+  let partition: ReturnType<typeof partitionHospital> | undefined;
+  if (opts.detail) {
+    // Baseline BEFORE the interior goes in, so verify can prove the partition +
+    // furnish passes only ever APPENDED to the shell's envelope sections.
+    shellCounts = shell.sections.map((s) => s.blocks.length);
+    partition = partitionHospital(shell); // per-floor rooms/corridors/doors + fixtures
+    furnish(shell, partition.rooms); // department equipment into each enclosed room
+  }
 
   // Dev-time invariant check (the CLI equivalent is `npm run verify:hospital`,
   // which fails the build on any violation — this is just the loud console
@@ -38,8 +48,9 @@ export function buildHospital(opts: { detail?: boolean } = {}): {
   const env = (import.meta as unknown as { env?: { DEV?: boolean } }).env;
   if (env?.DEV) {
     const result = verifyHospital(shell.sections, shell.lightFixtures, shell.exteriorFaces, {
-      shellCounts: furnished?.shellCounts,
-      rooms: furnished?.rooms,
+      shellCounts,
+      rooms: partition?.rooms,
+      floorMaps: partition?.floorMaps,
     });
     for (const line of result.info) console.info(`[hospital] ${line}`);
     for (const failure of result.failures) {
