@@ -40,9 +40,11 @@ export const QUALITY_PRESETS = {
     // structure contrast so the yard doesn't read as one uniform dark mass.
     fogDensity: 0.0072,
     drawDistance: 400,
-    // Lowered from 8 (perf pass): halves the per-fragment lighting cost. Fewer
-    // but flickering/high-contrast lights read scarier anyway (see InteriorLights).
-    interiorLightPool: 5,
+    // 7 (was 5): the furnish pass packs rooms with equipment that a 5-light
+    // pool left reading dark, so a couple more player-following lights keep the
+    // current room + its doorway/corridor lit at once. Still O(1) in building
+    // size; ~165 fps headroom absorbs two extra forward lights.
+    interiorLightPool: 7,
     pixelRatio: 1.4,
   },
   medium: {
@@ -52,7 +54,7 @@ export const QUALITY_PRESETS = {
     shadowMapSize: 1024,
     fogDensity: 0.0095,
     drawDistance: 300,
-    interiorLightPool: 4,
+    interiorLightPool: 5,
     pixelRatio: 1.25,
   },
   low: {

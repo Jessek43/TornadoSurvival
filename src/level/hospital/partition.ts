@@ -607,11 +607,14 @@ function emitFixtures(map: FloorMap, addFixture: (fx: Fixture) => void): void {
   for (const r of map.rooms) {
     addFixture([(r.x0 + r.x1) / 2, fy, (r.z0 + r.z1) / 2]);
   }
-  // Corridor panels on a sparse grid so the circulation reads lit without one
-  // fixture per cell.
+  // Corridor panels in a regular run down EVERY corridor (~1 per 4 m). The old
+  // `ix%2==1 && iz%2==1` gate skipped every even-column rib and even-row avenue
+  // outright — half the circulation had no ceiling fixture and read pitch-dark;
+  // `(ix+iz)%2==0` lays a fixture on alternate cells of any 1-wide corridor
+  // regardless of its parity, so the whole network reads lit.
   for (let ix = 0; ix < NX; ix++) {
     for (let iz = 0; iz < NZ; iz++) {
-      if (map.kind[idx(ix, iz)] === Cell.CORRIDOR && ix % 2 === 1 && iz % 2 === 1) {
+      if (map.kind[idx(ix, iz)] === Cell.CORRIDOR && (ix + iz) % 2 === 0) {
         addFixture([cellCX(ix), fy, cellCZ(iz)]);
       }
     }

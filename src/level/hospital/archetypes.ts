@@ -3,7 +3,7 @@ import type { MaterialId } from "../Materials";
 import { HOSPITAL_PARAMS as P } from "./params";
 import { CELLS_PER_COL, CELLS_PER_ROW } from "./grid";
 import * as props from "./props";
-import { isClinical } from "./layouts";
+import { isClinical, type RoomContent } from "./layouts";
 import type { BuiltRoom } from "./partition";
 
 /**
@@ -24,6 +24,30 @@ import type { BuiltRoom } from "./partition";
  *  All ids are physics clones of concrete — colour only. */
 export function DECK_PALETTE(f: number): MaterialId {
   return f === 0 ? "floorBeige" : f === 1 ? "floorTeal" : f % 2 === 0 ? "floorMustard" : "floorTeal";
+}
+
+/** Department accent — the trim/soffit hue that gives each department a
+ *  recognisable identity on top of the per-floor deck colour. Keyed off room
+ *  CONTENT (a floor is dominated by one facade + one core content, so the
+ *  accent clusters per floor), and reuses only existing accent ids so it adds
+ *  no draw call: cool blue for imaging/critical/lab/tech, sterile teal for
+ *  ward/surgical/desk, warm orange for maternity/office/support. */
+export function deptAccent(c: RoomContent): MaterialId {
+  switch (c) {
+    case "icu":
+    case "isolation":
+    case "imaging":
+    case "lab":
+    case "server":
+    case "waiting":
+      return "accentBlue";
+    case "patient":
+    case "surgical":
+    case "nurse_station":
+      return "accentTeal";
+    default: // maternity, office, records, store, kitchen
+      return "accentOrange";
+  }
 }
 
 /** Where the primary cluster stands: back-wall centre, facing the door. */
@@ -87,6 +111,15 @@ export function furnishRoom(room: BuiltRoom, blocks: BlockDef[]): void {
   const wall = (b: BlockDef[]): void => {
     if (backSafe) for (const blk of b) blocks.push(blk);
   };
+
+  // DEPARTMENT SOFFIT BAND — a wide accent stripe high on the back wall in the
+  // department's colour, breaking up the flat white cladding and giving each
+  // floor an identity read. Deliberately at 2.05 m: clears the tallest
+  // wall-backed item (the 1.9 m specimen fridge) so it never sits coplanar with
+  // an item's back face; hugs the back wall via wall() so it can't float out of
+  // section support. Applied to every room (shallow bays too).
+  const accent = deptAccent(c);
+  wall(props.wallPanel(a.bx, base + 2.05, a.bz, a.facing, accent, Math.max(0.8, a.cross - 0.5), 0.35));
 
   // Shallow bays get only a compact wall run, so they can't be over-furnished
   // into an un-walkable room.

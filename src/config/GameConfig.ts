@@ -28,7 +28,7 @@ export const GameConfig = {
 
   player: {
     spawn: { x: 0, y: 0, z: 20 }, // feet position on the ground
-    height: 1.8, // capsule total height (m)
+    height: 1.45, // capsule total height (m)
     radius: 0.35, // capsule radius (m)
     eyeHeight: 1.65, // camera height above the feet
 
@@ -171,7 +171,7 @@ export const GameConfig = {
     // A round is 2–3 straight passes, each spawning on a circle of passRadius
     // around the hospital, travelling a straight line (+ lateral jitter) that
     // aims at hospitalCenter offset sideways, then exiting → calm gap → next.
-    moveSpeed: 15, // m/s ground speed during a pass
+    moveSpeed: 12, // m/s ground speed during a pass
     passRadius: 120, // m — spawn/exit distance from the hospital center (scaled with the 64×48 footprint)
     passRampIn: 5, // s — intensity 0→1 as the funnel approaches
     passRampOut: 5, // s — intensity 1→0 as it recedes
@@ -230,13 +230,15 @@ export const GameConfig = {
   // Interior emergency lighting (systems/InteriorLights.ts). A small pool of
   // real point lights follows the player; unlimited emissive fixtures glow.
   interiorLights: {
-    range: 16, // m — point-light reach
-    // Sharper falloff (decay 1.8) than before so lights read as POOLS of light
-    // with deep shadow between — scarier and more legible-by-contrast than flat
-    // even fill (and it pairs with the reduced 5-light pool). Higher base to
-    // keep the near-fixture area readable despite the steeper falloff.
-    baseIntensity: 54,
-    decay: 1.8,
+    range: 17, // m — point-light reach (nudged out with the furnish pass so a
+    // single pool light fills a furnished ward instead of pooling at the ceiling)
+    // Falloff eased (decay 1.8 → 1.55) and base raised so the newly FURNISHED
+    // rooms read clearly — the interior was legibly too dark once packed with
+    // equipment. Still a POOL of light with shadow between (not flat fill), and
+    // the exterior storm darkening (Atmosphere hemisphere/fog) is untouched, so
+    // this brightens interiors WITHOUT flattening the tornado mood outdoors.
+    baseIntensity: 74,
+    decay: 1.55,
     flickerAmount: 0.62, // deeper, more unstable emergency flicker
     fixtureColor: 0x9fb08a, // sickly green-white emergency tint
     // A fixture with NO intact block this close to its housing has been
