@@ -238,6 +238,7 @@ export class Game {
             this.tornado.phase,
             this.tornado.passIndex + 1,
             this.tornado.passesTotal,
+            this.tornado.funnelCount,
           );
         }
         break;

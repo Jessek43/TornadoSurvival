@@ -35,11 +35,20 @@ export class RoundUI {
    * vs receding / clear-for-now (the gap between passes — the near-miss
    * tension). Kept light: one banner line + a pass counter.
    */
-  showPassState(phase: "incoming" | "receding" | "clear" | "done" | "idle", pass: number, total: number): void {
+  showPassState(
+    phase: "incoming" | "receding" | "clear" | "done" | "idle",
+    pass: number,
+    total: number,
+    funnelCount = 1,
+  ): void {
     if (phase === "incoming") {
       this.banner.style.display = "block";
       this.banner.className = "ts-banner ts-incoming";
-      this.banner.textContent = `⚠ TORNADO INCOMING — pass ${pass} of ${total}`;
+      // Announce twin funnels up front — funnelCount is the per-round roll
+      // (decided in TornadoSystem.begin before this banner ever shows), so the
+      // player learns it's a double from the banner, not from spotting funnel 2.
+      const lead = funnelCount >= 2 ? "TWIN TORNADOES INCOMING" : "TORNADO INCOMING";
+      this.banner.textContent = `⚠ ${lead} — pass ${pass} of ${total}`;
     } else if (phase === "receding") {
       this.banner.style.display = "block";
       this.banner.className = "ts-banner ts-clear";
