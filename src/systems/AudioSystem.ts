@@ -29,6 +29,10 @@ import type { WindField } from "./WindField";
  * retargeted at ~10 Hz with setTargetAtTime (smooth, and far fewer
  * automation events than per-frame writes).
  */
+
+/** Full-on siren gain (the emergency-warning voice sits well under the bed). */
+const SIREN_GAIN = 0.16;
+
 export class AudioSystem {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
@@ -42,7 +46,6 @@ export class AudioSystem {
   private pinkBuffer!: AudioBuffer;
   private brownBuffer!: AudioBuffer;
 
-  private sirenLevel = 0;
   private retargetTimer = 0;
   private groanTimer = 4;
   private whooshCooldown = 0;
@@ -71,9 +74,19 @@ export class AudioSystem {
     window.addEventListener("keydown", unlock, { once: true });
   }
 
-  /** `sirenLevel` 0..1 comes from the round state machine (Game). */
+  /**
+   * `level` 0..1 comes from the round state machine (Game), edge-triggered via
+   * AlarmController. Apply it to the gain node IMMEDIATELY here — not from the
+   * 10 Hz retarget loop — because that loop lives in update(), which is frozen
+   * whenever the sim isn't ticking (menu, paused, result screen). Without this a
+   * STOP edge on leaving a round would never reach the gain, so the siren would
+   * keep sounding on the menu; a START edge (a fresh round's warning) brings it
+   * back.
+   */
   setSirenLevel(level: number): void {
-    this.sirenLevel = level;
+    if (this.ctx) {
+      this.sirenGain.gain.setTargetAtTime(level * SIREN_GAIN, this.ctx.currentTime, 0.2);
+    }
   }
 
   update(dt: number, time: number): void {
@@ -134,8 +147,8 @@ export class AudioSystem {
     const windLevel = THREE.MathUtils.clamp(windSpeed / 45, 0, 1);
     this.windGain.gain.setTargetAtTime(windLevel * 0.5, now, 0.2);
     this.windFilter.frequency.setTargetAtTime(250 + windLevel * 900, now, 0.2);
-
-    this.sirenGain.gain.setTargetAtTime(this.sirenLevel * 0.16, now, 0.5);
+    // Siren gain is owned by setSirenLevel (edge-applied), so it responds even
+    // when this retarget loop is frozen (menu / paused). Not re-asserted here.
   }
 
   /** Structures creaking: sparse, closer together as danger rises. */
