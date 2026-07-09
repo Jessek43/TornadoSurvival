@@ -50,6 +50,12 @@ export class Flashlight {
     this.light.intensity = this.on ? GameConfig.flashlight.intensity : 0;
   }
 
+  /** Force the beam off (round reset). */
+  reset(): void {
+    this.on = false;
+    this.light.intensity = 0;
+  }
+
   /** Per-frame: ride the camera. Cheap-outs when off. */
   update(camera: THREE.PerspectiveCamera): void {
     if (!this.on) return;

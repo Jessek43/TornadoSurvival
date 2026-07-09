@@ -149,6 +149,21 @@ export class TornadoSystem {
     this.startPass();
   }
 
+  /** Return to the pre-round idle state (restart parity). The pooled funnel
+   *  bodies persist (reused next round); only the live list + counters clear. */
+  reset(): void {
+    this.funnels.length = 0;
+    this.state = "idle";
+    this.passesTotal = 0;
+    this.passIndex = 0;
+    this.funnelCount = 1;
+    this.throughBuilding = false;
+    this.travelLen = 0;
+    this.gapTimer = 0;
+    this.intensity = 0;
+    this.position.set(9999, 0, 9999);
+  }
+
   update(dt: number): void {
     const cfg = GameConfig.tornado;
 

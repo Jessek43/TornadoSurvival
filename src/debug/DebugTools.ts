@@ -11,6 +11,7 @@ import type { DebrisManager } from "../systems/DebrisManager";
 import type { InteriorLights } from "../systems/InteriorLights";
 import type { LightningSystem } from "../systems/LightningSystem";
 import type { AlarmController } from "../systems/AlarmController";
+import type { AppFlow } from "../systems/AppFlow";
 import { LightningConfig } from "../config/LightningConfig";
 import type { Physics } from "../core/Physics";
 import type { StairLight } from "../level/hospital/params";
@@ -72,6 +73,7 @@ export class DebugTools {
     private readonly stairLights: StairLight[],
     private readonly lightning: LightningSystem,
     private readonly alarm: AlarmController,
+    private readonly flow: AppFlow,
   ) {
     this.label = document.createElement("div");
     this.label.style.cssText =
@@ -156,8 +158,10 @@ export class DebugTools {
         ` · draw ${this.renderer.info.render.calls}`;
     }
 
+    const sens = this.player.sensitivity / GameConfig.player.mouseSensitivity;
     this.label.textContent =
-      `${this.smoothedFps.toFixed(0)} fps · tornado ` +
+      `${this.smoothedFps.toFixed(0)} fps · flow: ${this.flow.state} · sens: ${sens.toFixed(2)}` +
+      ` · tornado ` +
       (this.tornado.active
         ? `${this.tornado.position.distanceTo(this.player.position).toFixed(0)}m @ ${(
             this.tornado.intensity * 100
@@ -201,6 +205,20 @@ export class DebugTools {
       `last landing: ${this.player.lastFallSpeed.toFixed(1)} m/s -> ${this.player.lastFallDamage.toFixed(0)} hp`,
       this.lightningReadout(),
     ].join("\n");
+  }
+
+  /**
+   * Restart-parity readout: log the section count + released-block count on each
+   * entry to `playing` (Game.buildSession calls this). After a restart or a
+   * menu→play round-trip these must match the very first spawn — released back
+   * to 0, section count unchanged — proving teardown reconstructed the baseline.
+   */
+  logSessionBaseline(): void {
+    let released = 0;
+    for (const s of this.structures.structures) released += s.releasedCount;
+    console.info(
+      `[session] entered playing · sections ${this.structures.structures.length} · released ${released}`,
+    );
   }
 
   /** Storm-lightning + alarm readout: whether strikes are enabled, the

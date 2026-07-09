@@ -113,13 +113,25 @@ export class StructureSystem {
   private static readonly ZERO_SCALE = new THREE.Matrix4().makeScale(0, 0, 0);
 
   constructor(
-    scene: THREE.Scene,
+    private readonly scene: THREE.Scene,
     private readonly physics: Physics,
-    sections: SectionSpec[],
+    private readonly sections: SectionSpec[],
     private readonly windField: WindField,
     private readonly tornado: TornadoSystem,
     private readonly debris: DebrisManager,
   ) {
+    this.build();
+  }
+
+  /**
+   * Build (or REBUILD) every structure from the section specs: the per-material
+   * InstancedMeshes plus one dormant compound body per section. Assumes an
+   * empty/disposed state (fresh construction, or right after dispose()).
+   * Deterministic — the same specs always yield the same block count and
+   * pristine (released=false) blocks, which is the restart-parity guarantee.
+   */
+  private build(): void {
+    const { scene, physics, sections } = this;
     // Pass 1 — count blocks per material so each InstancedMesh is sized exactly.
     const counts = new Map<MaterialId, number>();
     for (const s of sections) {
@@ -255,6 +267,56 @@ export class StructureSystem {
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
+  }
+
+  /**
+   * Tear down the current build: remove every InstancedMesh from the scene and
+   * dispose its instance buffers + geometry + material (the shared detail
+   * TEXTURE is cached in BlockTextures and reused, so it is deliberately NOT
+   * disposed), remove all Rapier bodies this system owns (dormant compounds +
+   * any awake per-block bodies; released blocks are debris, owned by
+   * DebrisManager), and clear the structure + climb-volume lists IN PLACE so
+   * external holders (PlayerController's climbVolumes reference) stay valid.
+   * Idempotent — safe to call when already disposed.
+   */
+  dispose(): void {
+    for (const s of this.structures) {
+      if (s.compoundBody) {
+        this.physics.world.removeRigidBody(s.compoundBody); // takes its colliders with it
+        s.compoundBody = null;
+      }
+      for (const block of s.blocks) {
+        if (block.body) {
+          this.physics.world.removeRigidBody(block.body); // awake per-block body
+          block.body = null;
+        }
+        block.dormantCollider = null; // went out with the compound body above
+      }
+    }
+    this.structures.length = 0;
+
+    for (const mesh of this.meshes.values()) {
+      this.scene.remove(mesh);
+      mesh.dispose(); // instanceMatrix + instanceColor GPU buffers
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose(); // NOT material.map (shared, cached)
+    }
+    this.meshes.clear();
+
+    // Mutate the shared climb-volume array IN PLACE (PlayerController holds this
+    // exact reference via setClimbVolumes) — never reassign it.
+    this.climbVolumes.length = 0;
+  }
+
+  /**
+   * Restart parity: discard the current structures and reconstruct them pristine
+   * from the same section specs. We never REVERSE a release (block.released is
+   * monotonic within a build) — we throw the block set away and build a new one,
+   * so a restarted round starts at the first-spawn baseline by construction.
+   */
+  rebuild(): void {
+    this.dispose();
+    this.build();
   }
 
   /**

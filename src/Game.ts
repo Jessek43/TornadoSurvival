@@ -13,6 +13,9 @@ import { CameraRig } from "./systems/CameraRig";
 import { DamageSystem } from "./systems/DamageSystem";
 import { DebrisManager } from "./systems/DebrisManager";
 import { AlarmController } from "./systems/AlarmController";
+import { AppFlow, type AppState } from "./systems/AppFlow";
+import { SurviveAllPasses } from "./systems/Objective";
+import { loadSettings } from "./config/Settings";
 import { Flashlight } from "./systems/Flashlight";
 import { FunnelVisual } from "./systems/FunnelVisual";
 import { InteriorLights } from "./systems/InteriorLights";
@@ -25,8 +28,13 @@ import { DebugTools } from "./debug/DebugTools";
 import { HUD } from "./ui/HUD";
 import { RoundUI } from "./ui/RoundUI";
 
-/** One round: scout & shelter → tornado walks in → survive or die → restart. */
-export type RoundPhase = "warning" | "active" | "result";
+/**
+ * Sub-phase WITHIN an app-flow "playing" round: warning (siren, scout, pick
+ * shelter) → active (the storm walks in) → resolving (the outcome is decided;
+ * the sim keeps running for a beat so the death ragdoll tumbles / the last gust
+ * reads, before the flow transitions to survived/died).
+ */
+export type RoundPhase = "warning" | "active" | "resolving";
 
 /**
  * Owns every system and runs THE game loop.
@@ -74,9 +82,18 @@ export class Game {
   readonly roundUI: RoundUI;
   private readonly debug: DebugTools | null;
 
-  /** Round state machine — driven in update() stage 2. */
+  /** Application flow: menu → playing → survived/died → restart. The shell owns
+   *  session build/teardown + whether the sim ticks; it never ticks systems. */
+  readonly flow: AppFlow;
+  /** The one place the win condition lives — asked each active tick. */
+  private readonly objective = new SurviveAllPasses();
+
+  /** Round sub-phase within `playing` — driven in the sim tick. */
   phase: RoundPhase = "warning";
   private lastHealth = 100;
+  /** The verdict awaiting the result-screen delay (resolving phase). */
+  private pendingOutcome: "win" | "lose" | null = null;
+  private resolveTimer = 0;
 
   constructor(container: HTMLElement, uiRoot: HTMLElement) {
     this.quality = resolveQuality();
@@ -183,9 +200,18 @@ export class Game {
 
     this.hud = new HUD(uiRoot);
     this.roundUI = new RoundUI(uiRoot);
-    // Restart = full page reload: the simplest guaranteed-clean rebuild of
-    // scene, physics world, audio graph, and listeners (flagged in the plan).
-    this.roundUI.onRestart = () => location.reload();
+
+    // Application flow. Every session build/teardown side-effect happens in
+    // onFlowChange — the pure AppFlow just owns the legal transitions. Restart
+    // is now an IN-PLACE rebuild (buildSession), not a page reload.
+    this.flow = new AppFlow((from, to) => this.onFlowChange(from, to));
+    // TEMPORARY (until the menu's Play button lands in the screens commit): the
+    // result overlay's click routes back through the flow to rebuild in place.
+    this.roundUI.onRestart = () => {
+      if (this.flow.state === "survived") this.flow.transition("playAgain");
+      else if (this.flow.state === "died") this.flow.transition("retry");
+    };
+
     this.debug = DebugTools.enabled()
       ? new DebugTools(
           uiRoot,
@@ -201,8 +227,75 @@ export class Game {
           hospital.stairLights,
           this.lightning,
           this.alarm,
+          this.flow,
         )
       : null;
+
+    // TEMPORARY auto-start (the menu Play button replaces this in the screens
+    // commit): enter a round immediately, mirroring the old behavior.
+    this.flow.transition("start");
+  }
+
+  /**
+   * React to a flow transition — the shell's side effects. Building a session
+   * (structures rebuild + system resets) and tearing it down to the menu both
+   * live here; the pure AppFlow does none of this.
+   */
+  private onFlowChange(_from: AppState, to: AppState): void {
+    switch (to) {
+      case "playing":
+        this.buildSession();
+        break;
+      case "survived":
+        document.exitPointerLock();
+        this.roundUI.showResult("survived");
+        break;
+      case "died":
+        document.exitPointerLock();
+        this.roundUI.showResult("died");
+        break;
+      case "menu":
+        this.teardownSession();
+        break;
+    }
+  }
+
+  /**
+   * Enter a fresh round: rebuild the destructible world and reset every stateful
+   * system to its first-spawn baseline (restart parity), then apply the user's
+   * persisted look sensitivity (read ONCE here, not threaded through update).
+   */
+  private buildSession(): void {
+    this.structures.rebuild();
+    this.debris.reset();
+    this.tornado.reset();
+    this.damage.reset();
+    this.player.reset();
+    this.lightning.reset();
+    this.cameraRig.reset();
+    this.flashlight.reset();
+    this.player.sensitivity =
+      GameConfig.player.mouseSensitivity * loadSettings().sensitivity;
+
+    this.phase = "warning";
+    this.time = 0;
+    this.lastHealth = this.damage.health;
+    this.pendingOutcome = null;
+    this.resolveTimer = 0;
+    this.roundUI.hideResult();
+    this.roundUI.hideWarning();
+    // Parity readout: sections + released-block count on entry (see ?debug).
+    this.debug?.logSessionBaseline();
+  }
+
+  /** Return to the menu: drop the world so nothing simulates behind it. */
+  private teardownSession(): void {
+    this.structures.dispose();
+    this.debris.reset();
+    this.tornado.reset();
+    this.lightning.reset();
+    this.roundUI.hideResult();
+    this.roundUI.hideWarning();
   }
 
   update(dt: number): void {
@@ -210,8 +303,10 @@ export class Game {
     const input = this.input.poll();
     if (input.flashlightPressed) this.flashlight.toggle();
 
-    // (2) Round state machine: warning (siren, scout, pick shelter) →
-    //     active (the storm walks in) → result (survived or died, restart).
+    // (2) Round sub-phase within `playing`: warning (siren, scout, pick shelter)
+    //     → active (the storm walks in) → resolving (outcome decided; a beat,
+    //     then the flow transitions to survived/died). The win condition is the
+    //     Objective's — this loop only ASKS it, then drives the flow.
     this.time += dt;
     switch (this.phase) {
       case "warning": {
@@ -224,15 +319,13 @@ export class Game {
         }
         break;
       }
-      case "active":
-        if (this.damage.dead) {
-          this.player.forceRagdoll(); // collapse — the fling cam becomes the death cam
-          this.roundUI.showResult("died");
-          this.phase = "result";
-        } else if (this.tornado.state === "done") {
-          this.roundUI.showResult("survived");
-          this.phase = "result";
-        } else {
+      case "active": {
+        const verdict = this.objective.evaluate({
+          dead: this.damage.dead,
+          tornadoDone: this.tornado.state === "done",
+          passesTotal: this.tornado.passesTotal,
+        });
+        if (verdict === "pending") {
           // Live pass/gap state readout (incoming vs receding/clear).
           this.roundUI.showPassState(
             this.tornado.phase,
@@ -240,12 +333,26 @@ export class Game {
             this.tornado.passesTotal,
             this.tornado.funnelCount,
           );
+        } else {
+          if (verdict === "lost") this.player.forceRagdoll(); // collapse → death cam
+          this.pendingOutcome = verdict === "won" ? "win" : "lose";
+          this.resolveTimer = GameConfig.shell.resultDelay;
+          this.phase = "resolving";
+          this.roundUI.hideWarning();
         }
         break;
-      case "result":
+      }
+      case "resolving":
+        // Sim keeps running for the beat (ragdoll tumbles / last gust), then the
+        // flow enters the terminal screen. The gate then freezes the sim.
+        this.resolveTimer -= dt;
+        if (this.resolveTimer <= 0 && this.pendingOutcome) {
+          const outcome = this.pendingOutcome;
+          this.pendingOutcome = null;
+          this.flow.transition(outcome);
+        }
         break;
     }
-    if (input.restartPressed) location.reload();
 
     // (3) Tornado passes: straight-line travel + intensity envelope + gaps.
     this.tornado.update(dt);
@@ -318,7 +425,7 @@ export class Game {
       this.damage.health,
       this.player.stamina * 100,
       this.player.runStamina * 100,
-      !this.input.isPointerLocked && this.phase !== "result",
+      !this.input.isPointerLocked && this.flow.state === "playing",
     );
     this.debug?.update(dt);
   }

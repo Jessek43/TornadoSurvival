@@ -8,6 +8,7 @@ export class RoundUI {
 
   private readonly banner: HTMLDivElement;
   private resultShown = false;
+  private resultScreen: HTMLDivElement | null = null;
 
   constructor(private readonly uiRoot: HTMLElement) {
     injectStylesOnce();
@@ -81,6 +82,14 @@ export class RoundUI {
     screen.appendChild(hint);
     screen.addEventListener("click", () => this.onRestart?.());
     this.uiRoot.appendChild(screen);
+    this.resultScreen = screen;
+  }
+
+  /** Remove the result overlay so an in-place restart starts clean. */
+  hideResult(): void {
+    this.resultScreen?.remove();
+    this.resultScreen = null;
+    this.resultShown = false;
   }
 }
 

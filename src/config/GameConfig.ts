@@ -26,6 +26,19 @@ export const GameConfig = {
     warningTime: 15,
   },
 
+  // Application shell (menu → play → survived/died → restart). Transition
+  // timings live here so systems/AppFlow.ts + ui/Screens.ts carry no inline
+  // literals. See the app-shell section for how the flow drives these.
+  shell: {
+    // Beat between the round outcome resolving and the result screen appearing:
+    // lets the death ragdoll tumble / the storm's last gust read before the UI
+    // takes over. The simulation keeps running during this beat (still
+    // "playing"), then the flow transitions to survived / died.
+    resultDelay: 1.6, // s
+    // DOM cross-fade for the menu / result overlays (ui/Screens.ts).
+    fadeDuration: 0.35, // s
+  },
+
   player: {
     spawn: { x: 0, y: 0, z: 20 }, // feet position on the ground
     height: 1.45, // capsule total height (m)

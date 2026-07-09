@@ -322,6 +322,21 @@ export class DebrisManager {
     return bestSettled ?? bestAny;
   }
 
+  /**
+   * Despawn every active block back to the pool — restart parity: returns
+   * `activeCount` to 0 and every instance slot to its free list, and removes
+   * all debris rigid bodies from the shared Rapier world. Pooled slots/meshes
+   * persist (this is a reset, not a rebuild).
+   */
+  reset(): void {
+    for (const slots of this.slots.values()) {
+      for (const slot of slots) {
+        if (slot.active) this.despawn(slot);
+      }
+    }
+    this.spawnCounter = 0;
+  }
+
   private despawn(slot: DebrisSlot): void {
     if (slot.body) {
       this.physics.world.removeRigidBody(slot.body);

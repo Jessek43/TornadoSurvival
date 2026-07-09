@@ -45,6 +45,12 @@ export class CameraRig {
     this.impulse = Math.min(this.impulse + strength, 1.5);
   }
 
+  /** Drop back to first-person with no residual shake (restart parity). */
+  reset(): void {
+    this.mode = "first";
+    this.impulse = 0;
+  }
+
   update(dt: number, time: number): void {
     const cfg = GameConfig.camera;
 

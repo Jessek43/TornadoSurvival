@@ -59,6 +59,10 @@ export class PlayerController {
   /** Look angles (radians). Yaw steers movement; pitch is view-only. */
   yaw = 0;
   pitch = 0;
+  /** Radians of look per pixel of mouse travel. Seeded from the base tuning
+   *  constant and overwritten from the user's persisted Settings once, on entry
+   *  to `playing` (see Game.buildSession) — NOT threaded through update(). */
+  sensitivity = GameConfig.player.mouseSensitivity;
 
   private readonly velocity = new THREE.Vector3();
   private grounded = false;
@@ -412,6 +416,51 @@ export class PlayerController {
     if (this.state === "active") this.enterRagdoll();
   }
 
+  /**
+   * Restore the player to the pristine round-start state (restart parity).
+   * Tears down the ragdoll rig if we died / were flung, restores the standing
+   * capsule (crouch may have shrunk it), and returns the kinematic body to the
+   * spawn point, motionless, looking forward. `sensitivity` is left alone — the
+   * shell applies the persisted value alongside this call.
+   */
+  reset(): void {
+    const cfg = GameConfig.player;
+
+    if (this.ragdollBody) {
+      this.physics.world.removeRigidBody(this.ragdollBody); // takes its collider with it
+      this.ragdollBody = null;
+    }
+    this.dummy.visible = false;
+    this.state = "active";
+    this.gripping = false;
+    this.ragdollStillTime = 0;
+    this.prevRagdollVel.set(0, 0, 0);
+
+    // Restore the standing capsule shape (a held crouch resizes the collider).
+    this.crouchAmount = 0;
+    this.collider.setHalfHeight(cfg.height / 2 - cfg.radius);
+    this.collider.setTranslationWrtParent({ x: 0, y: 0, z: 0 });
+    this.appliedCapsuleH = cfg.height;
+    this.collider.setEnabled(true);
+
+    // Back to the spawn point (feet on the ground → body origin at capsule center).
+    this.body.setTranslation(
+      { x: cfg.spawn.x, y: cfg.spawn.y + cfg.height / 2, z: cfg.spawn.z },
+      true,
+    );
+    this.velocity.set(0, 0, 0);
+    this.grounded = false;
+    this.yaw = 0;
+    this.pitch = 0;
+    this.stamina = 1;
+    this.runStamina = 1;
+    this.exhausted = false;
+    this.jumpBuffer = 0;
+    this.coyote = 0;
+    this.lastFallSpeed = 0;
+    this.lastFallDamage = 0;
+  }
+
   /** The storm won: swap the kinematic rig for a tumbling dynamic body. */
   private enterRagdoll(): void {
     const cfg = GameConfig.player;
@@ -554,8 +603,8 @@ export class PlayerController {
    *  the eye height stay in lockstep with the physics body.) */
   update(_dt: number, input: InputState): void {
     const cfg = GameConfig.player;
-    this.yaw -= input.lookX * cfg.mouseSensitivity;
-    this.pitch -= input.lookY * cfg.mouseSensitivity;
+    this.yaw -= input.lookX * this.sensitivity;
+    this.pitch -= input.lookY * this.sensitivity;
     this.pitch = Math.max(-cfg.pitchLimit, Math.min(cfg.pitchLimit, this.pitch));
 
     // Capture the jump edge EVERY frame (this always runs; fixedUpdate may run

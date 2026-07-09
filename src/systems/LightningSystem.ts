@@ -148,6 +148,24 @@ export class LightningSystem {
     this.nextStrikeIn = this.nextInterval();
   }
 
+  /** Clear any live bolts / impact light / scorch marks and re-prime the strike
+   *  timer for a fresh round (restart parity). The precomputed `tallTargets` are
+   *  aim coordinates only and stay valid across a rebuild of the same layout —
+   *  strikeRaycastDown re-derives the current top each strike. */
+  reset(): void {
+    for (const b of this.liveBolts) this.disposeBolt(b.group);
+    this.liveBolts.length = 0;
+    this.strikeLight.intensity = 0;
+    for (const s of this.scorch) {
+      s.active = false;
+      s.mesh.visible = false;
+      s.mat.opacity = 0;
+    }
+    this.scorchNext = 0;
+    this.lastStrike = null;
+    this.nextStrikeIn = this.nextInterval();
+  }
+
   update(dt: number, time: number): void {
     const cfg = LightningConfig;
 
