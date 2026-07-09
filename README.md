@@ -11,7 +11,7 @@ npm install
 npm run dev        # start the Vite dev server, then open the printed localhost URL
 ```
 
-Click the canvas to lock the pointer and play.
+Click **Play** on the main menu to lock the pointer and start the round.
 
 ### Other scripts
 
@@ -20,6 +20,8 @@ npm run build            # production build to dist/
 npm run preview          # serve the production build locally
 npm run typecheck        # tsc --noEmit (strict)
 npm run verify:hospital  # static hospital build-time invariants (terminating)
+npm run verify:lightning # static lightning / alarm / round-resolution invariants
+npm run verify:flow      # static app-flow (menu → play → win/lose → restart) invariants
 ```
 
 Requires a recent Node (18+) and a WebGL2-capable browser.
@@ -35,22 +37,23 @@ Requires a recent Node (18+) and a WebGL2-capable browser.
 | **C** | Crouch |
 | **F** | Toggle flashlight |
 | **E** | Hold on to nearby structure in high wind (drains grip stamina) |
-| **R** | Restart the round |
+| **Esc** | Release the pointer → a **Resume / Restart round / Main menu** overlay (the sim pauses) |
 
-Bars in the corner show **Health** and **Grip** (stamina). Shelter inside the hospital: an intact roof + windward wall shields you from the wind, but the storm tears the shell open over time.
+Bars in the corner show **Health** and **Grip** (stamina). Shelter inside the hospital: an intact roof + windward wall shields you from the wind, but the storm tears the shell open over time. The **main menu** (title screen) has Play and a **mouse-sensitivity** slider that persists across sessions; restart and return-to-menu are on the survived/died result screen and the pause overlay.
 
 ## How it plays
 
 - A round opens with a **tornado warning** — run into the neighborhood and find shelter before the first pass.
 - The tornado makes **2–3 straight passes** separated by calm gaps. Each pass grazes one side of the map, so which side is safe is a gamble every pass.
 - **Direct exposure is lethal** — sustained wind batters your health and a strong pass sweeps you off your feet (a ragdoll fling). Debris impacts and falls hurt too.
-- **Lightning** cracks down during a pass — bolts strike buildings near the funnel, flash the sky, and tear blocks off whatever they hit. The tornado siren wails during the warning and between passes but falls silent while a funnel is bearing down.
-- Survive every pass to win; die at any point and the round ends.
+- **Lightning** cracks down during a pass — bolts strike buildings near the funnel, flash the sky, and tear blocks off whatever they hit. The tornado siren wails during the warning and between passes but falls silent while a funnel is bearing down (and the instant the round ends).
+- Survive every pass to **win** (a "you survived" screen); die at any point and the round **ends** (a "you died" screen). Both offer **Play again / Retry** (an in-place restart, no reload) and **Main menu**. The loop: `menu → play → survived | died → restart / menu`.
 
 ## URL parameters
 
 - `?quality=high|medium|low` — graphics preset (default `high`). Controls pixel ratio, shadows, fog/draw distance, debris budget, interior-light pool, and particle caps. See [`src/config/QualitySettings.ts`](src/config/QualitySettings.ts).
-- `?debug` — developer overlay: FPS meter + a live `lil-gui` panel that mutates tuning constants (`GameConfig`, `MATERIALS`) for balancing.
+- `?debug` — developer overlay: FPS meter, world counters (awake sections, bodies, released blocks, debris, **lights / dressing**), the app-flow + round readouts (`flow` / `phase` / `siren` / `sens`), and a live `lil-gui` panel that mutates tuning constants (`GameConfig`, `MATERIALS`) for balancing.
+- `?bare` — the Phase-1 structural shell of the hospital (columns instead of partition walls), the perf baseline.
 
 ## Architecture
 
@@ -63,6 +66,7 @@ src/
 ├── config/
 │   ├── GameConfig.ts       # all gameplay tuning constants in one place
 │   ├── LightningConfig.ts  # storm-lightning strike tuning (frequency, bolt, flash, damage)
+│   ├── Settings.ts         # persisted USER prefs (mouse sensitivity) — localStorage, not dev tuning
 │   └── QualitySettings.ts  # performance presets (the perf dials)
 ├── core/
 │   ├── Physics.ts          # Rapier world + fixed-timestep accumulator
@@ -85,13 +89,16 @@ src/
 │   ├── DamageSystem.ts     # health / death
 │   ├── CameraRig.ts        # first-person + fling chase cam + shake
 │   ├── FunnelVisual.ts     # funnel cone + dust particles
-│   ├── InteriorLights.ts   # pooled follow-lights + emissive fixtures
+│   ├── InteriorLights.ts   # pooled follow-lights + emissive fixtures (strand on the deck mount)
+│   ├── Flashlight.ts       # head-mounted spotlight (F)
 │   ├── LightningSystem.ts  # 3D bolt strikes: flash, structure damage, thunder
-│   ├── AlarmController.ts  # edge-triggered siren gate (silent while a funnel is present)
+│   ├── AlarmController.ts  # pure edge-triggered siren gate (silent while a funnel is present / paused / on menu)
+│   ├── AppFlow.ts          # pure app state machine: menu → playing → survived|died → restart/menu
+│   ├── Objective.ts        # the win condition in ONE seam (SurviveAllPasses)
 │   ├── Atmosphere.ts       # storm sky dome (image), fog, grade, lightning
 │   └── AudioSystem.ts      # procedural WebAudio (rumble, wind, thunder…)
-├── ui/                     # HUD + round banners (HTML overlay)
-└── debug/DebugTools.ts     # ?debug FPS + lil-gui tuning panel
+├── ui/                     # HUD + round banners + app-shell Screens (menu / result / pause overlays)
+└── debug/DebugTools.ts     # ?debug FPS + counters + lil-gui tuning panel
 ```
 
 ### Performance discipline
