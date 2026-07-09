@@ -89,6 +89,17 @@ export class AudioSystem {
     }
   }
 
+  /**
+   * Silence ALL audio at the source. The WebAudio graph runs on the audio clock,
+   * independent of the render loop, so stopping the loop leaves every live node
+   * — the siren included — sounding. Suspending the context is the "where audio
+   * lives" stop (not a per-node siren special-case): used when the game halts on
+   * a fatal boot error. A no-op if audio was never started (e.g. on the menu).
+   */
+  suspend(): void {
+    void this.ctx?.suspend();
+  }
+
   update(dt: number, time: number): void {
     if (!this.ctx) return;
     this.whooshCooldown = Math.max(0, this.whooshCooldown - dt);

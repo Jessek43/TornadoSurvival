@@ -13,17 +13,30 @@
  */
 export class BootOverlay {
   private readonly root: HTMLDivElement;
+  /** The mount parent, RETAINED for the process lifetime. `remove()` (at the
+   *  handoff to the menu) detaches `root`, but a later error / context-loss
+   *  screen must re-mount it — the boot overlay outlives the menu, because a
+   *  fatal error can strike at any time after `ready`. */
+  private readonly host: HTMLElement;
   private bar: HTMLDivElement | null = null;
 
   constructor(host: HTMLElement = document.body) {
     injectStyles();
+    this.host = host;
     this.root = document.createElement("div");
     this.root.className = "ts-boot";
     host.appendChild(this.root);
   }
 
+  /** Re-attach `root` if a prior `remove()` (the menu handoff) detached it, so a
+   *  post-ready error / context-loss screen actually appears in the DOM. */
+  private ensureMounted(): void {
+    if (!this.root.isConnected) this.host.appendChild(this.root);
+  }
+
   /** The loading gate. Progress is set separately from real awaited work. */
   showLoading(): void {
+    this.ensureMounted();
     this.root.innerHTML = "";
     this.root.className = "ts-boot";
     const panel = div("ts-boot-panel");
@@ -116,6 +129,7 @@ export class BootOverlay {
 
   /** Reset the root to a single centered panel and return it for content. */
   private fill(panelClass: string): HTMLDivElement {
+    this.ensureMounted();
     this.bar = null;
     this.root.innerHTML = "";
     this.root.className = "ts-boot";

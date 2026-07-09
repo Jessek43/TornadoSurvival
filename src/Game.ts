@@ -596,6 +596,17 @@ export class Game {
     return this.renderer.domElement;
   }
 
+  /**
+   * Halt the game on a FATAL boot error (the boot wiring cancels the RAF loop,
+   * which it owns; this stops what the loop can't). Audio lives on the
+   * AudioContext, outside the loop, so a cancelled loop leaves the siren
+   * sounding — silence it at the source here, not by muting the siren as a
+   * special case in the error path. Terminal: nothing restarts the game after.
+   */
+  halt(): void {
+    this.audio.suspend();
+  }
+
   onResize(width: number, height: number): void {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();

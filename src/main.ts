@@ -3,6 +3,7 @@ import { inject } from "@vercel/analytics";
 import { Game } from "./Game";
 import { BootFlow, type BootTransition, type CapabilityResult } from "./systems/BootFlow";
 import { checkCapabilities, missingCapabilities } from "./boot/capabilities";
+import { routeBootTransition } from "./boot/bootRoute";
 import { BootOverlay } from "./ui/BootOverlay";
 import { isDebugEnabled } from "./debug/debugFlag";
 
@@ -30,16 +31,30 @@ async function boot(): Promise<void> {
   const showStack = isDebugEnabled(location.search);
 
   // Mutable boot context the transition handler reads. Declared up front so the
-  // closure captures them before any input drives the flow.
+  // closure captures them before any input drives the flow. `game` is a `let` so
+  // the (permanently registered) transition handler can halt it on a fatal error
+  // — the handler outlives the handoff to the menu and keeps rendering boot
+  // screens for the process lifetime.
   let cap: CapabilityResult = { webgl2: false, wasm: false };
   let lastError: unknown = null;
   let rafHandle = 0;
+  let game: Game | null = null;
 
-  // Side effects of each boot transition. BootFlow decides WHEN; this decides
-  // WHAT shows. The `error` edge fires at most once (BootFlow is idempotent), so
-  // the overlay appears once and the loop is cancelled once.
+  // Side effects of each boot transition. BootFlow decides WHEN, the pure router
+  // decides WHAT (screen + whether it's fatal), and this applies it. The handler
+  // stays subscribed for the whole process, so a fatal transition AFTER `ready`
+  // (a mid-round exception, a lost context) is still rendered.
   const onBootTransition = (t: BootTransition): void => {
-    switch (t.to) {
+    const action = routeBootTransition(t);
+    // A fatal transition stops the game: cancel the RAF loop (this owns the
+    // handle) FIRST — a loop that keeps running re-throws every frame and buries
+    // the real trace — then halt what the loop can't (audio lives outside it).
+    // Safe before the loop/game exist: cancelAnimationFrame(0) and `game?` no-op.
+    if (action.fatal) {
+      cancelAnimationFrame(rafHandle);
+      game?.halt();
+    }
+    switch (action.screen) {
       case "loading":
         overlay.showLoading();
         break;
@@ -50,21 +65,18 @@ async function boot(): Promise<void> {
         overlay.remove(); // menu is already up (Game's constructor showed it)
         break;
       case "error":
-        // Stop the render loop FIRST: a loop that keeps running re-throws every
-        // frame and buries the real trace under thousands of copies. Safe before
-        // the loop exists — cancelAnimationFrame(0) is a no-op.
-        cancelAnimationFrame(rafHandle);
-        if (t.errorKind === "contextLost") {
-          overlay.showContextLost();
-        } else if (showStack) {
+        if (showStack) {
           const { message, stack } = describeError(lastError);
           overlay.showError(message, stack);
         } else {
           overlay.showError("The game hit an unexpected error. Reload to try again.", null);
         }
         break;
-      case "checking":
-        break; // initial state, never entered via a transition
+      case "contextLost":
+        overlay.showContextLost();
+        break;
+      case "none":
+        break;
     }
   };
 
@@ -102,30 +114,18 @@ async function boot(): Promise<void> {
 
   const app = document.getElementById("app")!;
   const ui = document.getElementById("ui")!;
-  const game = new Game(app, ui); // synchronous world build == the "world" task
+  game = new Game(app, ui); // synchronous world build == the "world" task
+  // A non-null binding for the closures below (the outer `let game` stays for
+  // the transition handler's null-guarded `game?.halt()`).
+  const g = game;
   flow.taskCompleted("world");
   overlay.setProgress(flow.progress); // → ready → overlay removed, menu handoff
 
   // WebGL context loss is a DOM event on the canvas, NOT an exception — it never
   // reaches window.onerror, so it gets its own input and its own message.
-  game.canvas.addEventListener("webglcontextlost", () => flow.contextLost());
+  g.canvas.addEventListener("webglcontextlost", () => flow.contextLost());
 
-  window.addEventListener("resize", () =>
-    game.onResize(window.innerWidth, window.innerHeight),
-  );
-
-  // Dev-only forcing flags for confirming the fallback paths in-browser. They
-  // inject at BootFlow's inputs (a thrown error / a dispatched context-loss),
-  // adding no branch inside the loop or the renderer.
-  if (params.has("forceError")) {
-    // Uncaught in a timer → window "error" → the latch above, one second post-ready.
-    setTimeout(() => {
-      throw new Error("forced boot error (?forceError)");
-    }, 1000);
-  }
-  if (params.has("forceContextLost")) {
-    game.canvas.dispatchEvent(new Event("webglcontextlost"));
-  }
+  window.addEventListener("resize", () => g.onResize(window.innerWidth, window.innerHeight));
 
   let last = performance.now();
   const frame = (now: number): void => {
@@ -133,10 +133,25 @@ async function boot(): Promise<void> {
     // game a huge time step when it resumes.
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
-    game.update(dt);
+    g.update(dt);
     rafHandle = requestAnimationFrame(frame);
   };
   rafHandle = requestAnimationFrame(frame);
+
+  // Dev-only forcing flags for confirming the fallback paths in-browser. They
+  // inject at BootFlow's inputs, adding no branch inside the loop or renderer.
+  // Both fire ~1 s AFTER the loop is running (registered below the rAF start) so
+  // they exercise the real, loop-running path — the RAF cancel in the transition
+  // handler has a live frame to cancel, exactly as a genuine error/loss would.
+  if (params.has("forceError")) {
+    // Uncaught in a timer → window "error" → the latch above.
+    setTimeout(() => {
+      throw new Error("forced boot error (?forceError)");
+    }, 1000);
+  }
+  if (params.has("forceContextLost")) {
+    setTimeout(() => g.canvas.dispatchEvent(new Event("webglcontextlost")), 1000);
+  }
 }
 
 /** Normalize an unknown thrown value into a message + optional stack. */
