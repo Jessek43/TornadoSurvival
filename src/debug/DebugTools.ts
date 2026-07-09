@@ -12,6 +12,8 @@ import type { InteriorLights } from "../systems/InteriorLights";
 import type { LightningSystem } from "../systems/LightningSystem";
 import type { AlarmController } from "../systems/AlarmController";
 import type { AppFlow } from "../systems/AppFlow";
+import type { PlayArea } from "../systems/PlayArea";
+import type { Boundary } from "../systems/Boundary";
 import { LightningConfig } from "../config/LightningConfig";
 import type { Physics } from "../core/Physics";
 import type { StairLight } from "../level/hospital/params";
@@ -78,6 +80,8 @@ export class DebugTools {
     private readonly lightning: LightningSystem,
     private readonly alarm: AlarmController,
     private readonly flow: AppFlow,
+    private readonly playArea: PlayArea,
+    private readonly boundary: Boundary,
   ) {
     this.label = document.createElement("div");
     this.label.style.cssText =
@@ -238,7 +242,26 @@ export class DebugTools {
       this.groundGapReadout(),
       `last landing: ${this.player.lastFallSpeed.toFixed(1)} m/s -> ${this.player.lastFallDamage.toFixed(0)} hp`,
       this.lightningReadout(),
+      this.boundaryReadout(),
     ].join("\n");
+  }
+
+  /** Map-edge readout: which zone the player is in (in / warn / out), the signed
+   *  distance to the edge, and the live boundary collider + prop counts. `bounds`
+   *  should read `warn` as you approach a wall then hold at the wall; `edge` goes
+   *  to ~0 and negative only if you somehow got outside; `boundary` stays 4/104. */
+  private boundaryReadout(): string {
+    const p = this.player.position;
+    const dist = this.playArea.distanceToEdge(p.x, p.z);
+    const zone = this.playArea.isOutside(p.x, p.z)
+      ? "out"
+      : dist < GameConfig.PLAY_AREA.warnBand
+        ? "warn"
+        : "in";
+    return (
+      `§B bounds: ${zone} · edge: ${dist.toFixed(1)}m` +
+      ` · boundary: ${this.boundary.liveColliderCount()} colliders / ${this.boundary.propCount} props`
+    );
   }
 
   /**
@@ -257,7 +280,12 @@ export class DebugTools {
       `[session] entered playing · sections ${this.structures.structures.length}` +
         ` · released ${released}` +
         ` · lights ${this.countSceneLights()}/${this.lightBaseline}` +
-        ` · dressing ${this.interiorLights.liveFixtures}/${this.interiorLights.fixtureCount}`,
+        ` · dressing ${this.interiorLights.liveFixtures}/${this.interiorLights.fixtureCount}` +
+        // Boundary lives outside the teardown subtree, so these must read
+        // identically every entry: colliders 4/4, props unchanged, and the
+        // hospital dressing above unchanged by the boundary.
+        ` · boundary ${this.boundary.liveColliderCount()}/${this.boundary.colliderCount} colliders` +
+        ` · boundary-props ${this.boundary.propCount}`,
     );
   }
 

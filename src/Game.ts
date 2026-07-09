@@ -275,6 +275,8 @@ export class Game {
           this.lightning,
           this.alarm,
           this.flow,
+          this.playArea,
+          this.boundary,
         )
       : null;
 
@@ -373,6 +375,9 @@ export class Game {
     this.time = 0;
     this.lastHealth = this.damage.health;
     this.roundUI.hideWarning();
+    // Spawn is central, so start the edge-warning latch clear + the nudge hidden.
+    this.playArea.reset();
+    this.hud.setBoundaryWarning(false);
 
     // Snap the camera + mood to the fresh spawn ONCE (dt 0) so the couple of
     // frames rendered before pointer lock is granted show the correct view, not
@@ -550,6 +555,13 @@ export class Game {
 
     // (7) Player per-frame work: mouse look, mesh/dummy sync.
     this.player.update(dt, input);
+
+    // (7b) Map edge: the boundary walls stop the player physically (a collider,
+    //      not a clamp); this only drives the "leaving the area" nudge, edge-
+    //      triggered off PlayArea's latch (never a polled boolean).
+    const edge = this.playArea.update(this.player.position.x, this.player.position.z);
+    if (edge === "entered") this.hud.setBoundaryWarning(true);
+    else if (edge === "exited") this.hud.setBoundaryWarning(false);
 
     // (8) Sync render transforms from rigid bodies.
     this.debris.syncTransforms();

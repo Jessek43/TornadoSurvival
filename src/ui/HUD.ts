@@ -8,6 +8,9 @@ export class HUD {
   private readonly staminaFill: HTMLDivElement;
   private readonly sprintFill: HTMLDivElement;
   private readonly prompt: HTMLDivElement;
+  /** "Leaving the area" nudge — a persistent element, hidden by default, toggled
+   *  ONLY on PlayArea.update()'s edge transition (never polled). */
+  private readonly boundaryNudge: HTMLDivElement;
 
   constructor(uiRoot: HTMLElement) {
     const bars = document.createElement("div");
@@ -35,6 +38,15 @@ export class HUD {
       "Shift sprint · C crouch · F flashlight<br>" +
       "E hold on in wind · R restart";
     uiRoot.appendChild(this.prompt);
+
+    this.boundaryNudge = document.createElement("div");
+    this.boundaryNudge.style.cssText =
+      "position:absolute;left:50%;top:18%;transform:translate(-50%,-50%);display:none;" +
+      "background:rgba(70,20,10,.72);color:#f4c9a0;padding:9px 18px;border-radius:5px;" +
+      "border:1px solid rgba(230,120,80,.5);font:600 13px system-ui;letter-spacing:1px;" +
+      "text-align:center;";
+    this.boundaryNudge.textContent = "⚠ LEAVING THE AREA — TURN BACK";
+    uiRoot.appendChild(this.boundaryNudge);
   }
 
   update(health: number, grip: number, sprint: number, showPrompt: boolean): void {
@@ -42,6 +54,12 @@ export class HUD {
     this.staminaFill.style.width = `${Math.max(grip, 0)}%`;
     this.sprintFill.style.width = `${Math.max(sprint, 0)}%`;
     this.prompt.style.display = showPrompt ? "block" : "none";
+  }
+
+  /** Show/hide the edge-warning nudge. Driven by PlayArea.update()'s transition
+   *  in Game — a straight toggle, no state kept here. */
+  setBoundaryWarning(visible: boolean): void {
+    this.boundaryNudge.style.display = visible ? "block" : "none";
   }
 }
 
