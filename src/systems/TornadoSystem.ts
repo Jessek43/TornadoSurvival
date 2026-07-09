@@ -170,13 +170,11 @@ export class TornadoSystem {
     if (this.state === "gap") {
       this.gapTimer -= dt;
       if (this.gapTimer <= 0) {
+        // A gap only ever separates two passes now (the final pass resolves
+        // straight to "done" on its recede edge below), so a gap always advances
+        // to the next pass — never to "done".
         this.passIndex++;
-        if (this.passIndex >= this.passesTotal) {
-          this.state = "done";
-          this.endPass();
-        } else {
-          this.startPass();
-        }
+        this.startPass();
       }
       return;
     }
@@ -217,11 +215,21 @@ export class TornadoSystem {
     if (this.funnels.length > 0) this.position.copy(this.funnels[0].position);
     this.intensity = maxIntensity;
 
-    // --- exit: every funnel has crossed and left the play area → calm gap ---
+    // --- exit: every funnel has crossed and left the play area ---
+    // The round resolves on THIS edge: the FINAL pass goes straight to "done"
+    // (no phantom gap — that would resume the siren and delay the survived
+    // screen), while any earlier pass drops into the real between-pass gap
+    // (unchanged pacing: gapDuration, siren sounds in it). With two funnels this
+    // fires only once ALL funnels have receded (anyTraveling covers every live
+    // funnel), so "done"/"gap" is entered only after the last core leaves.
     if (!anyTraveling) {
-      this.state = "gap";
-      this.gapTimer = cfg.gapDuration;
       this.endPass();
+      if (this.passIndex >= this.passesTotal - 1) {
+        this.state = "done";
+      } else {
+        this.state = "gap";
+        this.gapTimer = cfg.gapDuration;
+      }
     }
   }
 

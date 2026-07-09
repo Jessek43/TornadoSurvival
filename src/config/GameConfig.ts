@@ -30,13 +30,12 @@ export const GameConfig = {
   // timings live here so systems/AppFlow.ts + ui/Screens.ts carry no inline
   // literals. See the app-shell section for how the flow drives these.
   shell: {
-    // Beat between the round outcome resolving and the result screen appearing:
-    // lets the death ragdoll tumble / the storm's last gust read before the UI
-    // takes over. The simulation keeps running during this beat (still
-    // "playing"), then the flow transitions to survived / died.
-    resultDelay: 1.6, // s
-    // DOM cross-fade for the menu / result overlays (ui/Screens.ts).
-    fadeDuration: 0.35, // s
+    // DOM opacity fade-in for the menu / result overlays (ui/Screens.ts). This
+    // is a READABILITY fade on the overlay only — the round resolves to its
+    // terminal state (and the siren stops) IMMEDIATELY on the funnel-gone edge;
+    // this constant never gates the state transition. Kept short so the result
+    // reads at once.
+    fadeDuration: 0.25, // s
     // Grace window after a Play / Resume click during which the "click to
     // resume" overlay is suppressed: pointer lock is granted asynchronously
     // (a frame or two after the gesture), and without this the overlay would

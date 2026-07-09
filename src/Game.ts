@@ -31,11 +31,13 @@ import { Screens, type ResultSummary } from "./ui/Screens";
 
 /**
  * Sub-phase WITHIN an app-flow "playing" round: warning (siren, scout, pick
- * shelter) → active (the storm walks in) → resolving (the outcome is decided;
- * the sim keeps running for a beat so the death ragdoll tumbles / the last gust
- * reads, before the flow transitions to survived/died).
+ * shelter) → active (the storm walks in). The terminal (survived/died) is an
+ * AppFlow state, not a round phase: the active phase asks the Objective every
+ * tick and, the frame it turns terminal, hands straight to the flow — no
+ * intermediate phase, no timer (the overlay's own opacity fade is the only
+ * softening; see GameConfig.shell.fadeDuration).
  */
-export type RoundPhase = "warning" | "active" | "resolving";
+export type RoundPhase = "warning" | "active";
 
 /**
  * Owns every system and runs THE game loop.
@@ -93,9 +95,6 @@ export class Game {
   /** Round sub-phase within `playing` — driven in the sim tick. */
   phase: RoundPhase = "warning";
   private lastHealth = 100;
-  /** The verdict awaiting the result-screen delay (resolving phase). */
-  private pendingOutcome: "win" | "lose" | null = null;
-  private resolveTimer = 0;
   /** Round summary captured at resolution, shown on the result screen. */
   private lastResult: ResultSummary | null = null;
   /** Guard the first simulated frame after (re)acquiring pointer lock so a
@@ -317,8 +316,6 @@ export class Game {
     this.phase = "warning";
     this.time = 0;
     this.lastHealth = this.damage.health;
-    this.pendingOutcome = null;
-    this.resolveTimer = 0;
     this.roundUI.hideWarning();
 
     // Snap the camera + mood to the fresh spawn ONCE (dt 0) so the couple of
@@ -367,6 +364,20 @@ export class Game {
       this.resumeGuard = true;
     }
 
+    // Siren gate — evaluated EVERY frame (re-reading flow.state AFTER the sim
+    // tick, which may have just resolved the round), through the edge-triggered
+    // AlarmController. Audible only while actively playing (pointer locked) and
+    // the storm is warned/incoming (warning) or receding between passes (a live
+    // pass's tornado state is "gap"); SILENT while a funnel is present, and — the
+    // fix — silent the instant the round resolves (flow leaves "playing"), on
+    // pause (lock lost), and on the menu. One stop edge, fired once, no per-frame
+    // re-trigger (AlarmController dedupes); no round knowledge inside it.
+    const sirenOn =
+      this.flow.state === "playing" &&
+      locked &&
+      (this.phase === "warning" || (this.phase === "active" && this.tornado.state === "gap"));
+    this.alarm.set(sirenOn);
+
     // (13) Render + overlays — every frame, even paused / on a menu.
     this.atmosphere.render(dt);
     this.hud.update(
@@ -387,9 +398,9 @@ export class Game {
     if (input.flashlightPressed) this.flashlight.toggle();
 
     // (2) Round sub-phase within `playing`: warning (siren, scout, pick shelter)
-    //     → active (the storm walks in) → resolving (outcome decided; a beat,
-    //     then the flow transitions to survived/died). The win condition is the
-    //     Objective's — this loop only ASKS it, then drives the flow.
+    //     → active (the storm walks in). The win condition is the Objective's —
+    //     this loop only ASKS it, and the frame the verdict turns terminal it
+    //     hands straight to the flow (no intermediate phase, no timer).
     this.time += dt;
     switch (this.phase) {
       case "warning": {
@@ -417,31 +428,23 @@ export class Game {
             this.tornado.funnelCount,
           );
         } else {
-          if (verdict === "lost") this.player.forceRagdoll(); // collapse → death cam
-          this.pendingOutcome = verdict === "won" ? "win" : "lose";
-          this.resolveTimer = GameConfig.shell.resultDelay;
-          this.phase = "resolving";
-          this.roundUI.hideWarning();
-          // Snapshot the summary now (tornado state is reset only next round).
+          // Terminal — resolve on THIS edge, no intermediate phase, no timer.
+          // Snapshot the summary first (tornado state is reset only next round),
+          // collapse on death, then hand straight to the flow. The result
+          // overlay's opacity fade (shell.fadeDuration) is the only softening;
+          // the siren stops immediately via the flow-aware gate in update().
           this.lastResult = {
             passesSurvived:
               verdict === "won" ? this.tornado.passesTotal : this.tornado.passIndex,
             passesTotal: this.tornado.passesTotal,
             timeSec: Math.max(0, this.time - GameConfig.round.warningTime),
           };
+          if (verdict === "lost") this.player.forceRagdoll(); // collapse → death cam
+          this.roundUI.hideWarning();
+          this.flow.transition(verdict === "won" ? "win" : "lose");
         }
         break;
       }
-      case "resolving":
-        // Sim keeps running for the beat (ragdoll tumbles / last gust), then the
-        // flow enters the terminal screen. The gate then freezes the sim.
-        this.resolveTimer -= dt;
-        if (this.resolveTimer <= 0 && this.pendingOutcome) {
-          const outcome = this.pendingOutcome;
-          this.pendingOutcome = null;
-          this.flow.transition(outcome);
-        }
-        break;
     }
 
     // (3) Tornado passes: straight-line travel + intensity envelope + gaps.
@@ -492,20 +495,12 @@ export class Game {
     this.cameraRig.update(dt, this.time);
     this.flashlight.update(this.camera);
 
-    // (12) Mood: interior lights, funnel visual, atmosphere, audio bed.
+    // (12) Mood: interior lights, funnel visual, atmosphere, audio bed. (The
+    // siren gate lives in update() so it can stop as an edge on the terminal /
+    // pause / menu transition, when this method no longer runs.)
     this.interiorLights.update(this.player.position, dt);
     this.funnelVisual.update(dt);
     this.atmosphere.update(dt, this.player.position);
-    // Alarm tied to tornado PRESENCE: audible while the storm is warned/incoming
-    // (warning phase) and after it recedes between passes (a live pass's state
-    // is "gap"), but SILENT while a funnel is actually present (state "pass") so
-    // it isn't blaring over the tornado. With a double tornado the state only
-    // returns to "gap" once ALL funnels have receded, so the alarm resumes only
-    // then. Edge-triggered inside AlarmController — start/stop fire once per
-    // transition, never per frame.
-    const alarmOn =
-      this.phase === "warning" || (this.phase === "active" && this.tornado.state === "gap");
-    this.alarm.set(alarmOn);
     this.audio.update(dt, this.time);
   }
 
