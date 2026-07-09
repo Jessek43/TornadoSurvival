@@ -78,15 +78,24 @@ export class Screens {
     btnRow.append(this.resultPrimary, menuBtn);
     this.result.append(this.resultHeading, this.resultBody, goalEcho, btnRow);
 
-    // --- RESUME (pointer lock lost) ----------------------------------------
+    // --- RESUME / PAUSE (pointer lock lost) --------------------------------
     this.resume = overlay("ts-screen ts-resume");
     const resumePanel = el("div", "ts-resume-panel", "");
-    resumePanel.append(
-      el("h2", "ts-resume-h", "PAUSED"),
-      el("p", "ts-resume-p", "Click to resume"),
-    );
+    // Primary Resume, then Restart round, then Main menu — same order/styling as
+    // the result screen (primary first, menu last). Restart + Menu reuse the
+    // exact same callbacks (and thus AppFlow transitions) as the result screen.
+    const resumeBtn = button("RESUME", cb.onResume, "ts-primary");
+    const restartBtn = button("RESTART ROUND", cb.onRestart, "ts-secondary");
+    const pauseMenuBtn = button("MAIN MENU", cb.onToMenu, "ts-secondary");
+    const pauseRow = el("div", "ts-btn-row", "");
+    pauseRow.append(resumeBtn, restartBtn, pauseMenuBtn);
+    resumePanel.append(el("h2", "ts-resume-h", "PAUSED"), pauseRow);
+    // Clicks inside the panel act only via their button — don't also bubble to
+    // the background resume handler below.
+    resumePanel.onclick = (e) => e.stopPropagation();
     this.resume.append(resumePanel);
-    // The whole overlay is the click target — clicking it re-requests lock.
+    // Clicking the overlay BACKGROUND (outside the panel) resumes, preserving
+    // the old click-anywhere-to-resume affordance.
     this.resume.onclick = cb.onResume;
 
     this.uiRoot.append(this.menu, this.result, this.resume);
@@ -221,10 +230,10 @@ function injectStyles(): void {
     .ts-slider { width: 100%; accent-color: #6ab04c; cursor: pointer; }
     .ts-resume { background: rgba(5, 8, 5, .55); }
     .ts-resume-panel {
-      background: rgba(0,0,0,.6); padding: 20px 34px; border-radius: 8px;
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+      background: rgba(0,0,0,.6); padding: 24px 34px; border-radius: 8px;
     }
-    .ts-resume-h { margin: 0 0 6px; letter-spacing: 4px; font-size: 22px; color: #e6ecdd; }
-    .ts-resume-p { margin: 0; opacity: .75; }
+    .ts-resume-h { margin: 0; letter-spacing: 4px; font-size: 22px; color: #e6ecdd; }
   `;
   document.head.appendChild(style);
 }
