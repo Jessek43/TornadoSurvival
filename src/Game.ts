@@ -106,8 +106,11 @@ export class Game {
    *  paused stretch doesn't feed one huge dt into the storm. */
   private resumeGuard = true;
   /** Countdown suppressing the resume overlay while pointer lock is being
-   *  acquired (granted a frame or two after the Play/Resume click gesture). */
+   *  acquired (granted a frame or two after the Play/Resume click gesture, or
+   *  after the browser's post-Esc re-lock cooldown). */
   private lockGrace = 0;
+  /** Retry cadence for re-requesting pointer lock across that cooldown. */
+  private lockRetryTimer = 0;
 
   constructor(container: HTMLElement, uiRoot: HTMLElement) {
     this.quality = resolveQuality();
@@ -273,11 +276,30 @@ export class Game {
     this.flow.transition(event);
   }
 
-  /** Request pointer lock and open the acquire-grace window (suppresses the
-   *  resume overlay until the browser grants the lock a frame or two later). */
+  /**
+   * Request pointer lock and open the acquire-grace window. Requests once now (in
+   * the click gesture — the fast path when there's no cooldown, e.g. the menu's
+   * Play), and arms the retry timer: after the user presses Esc to open the pause
+   * overlay, the browser BLOCKS re-locking for ~1.25 s, so a "Restart round" /
+   * "Resume" click straight after Esc would otherwise silently fail and the
+   * overlay would pop back up. The click's transient activation lasts ~5 s, so
+   * `update` re-requests across the grace window until it takes — one click is
+   * enough even right after Esc.
+   */
   private acquirePointerLock(): void {
     this.lockGrace = GameConfig.shell.lockAcquireGrace;
-    void this.renderer.domElement.requestPointerLock();
+    this.lockRetryTimer = GameConfig.shell.lockRetryInterval;
+    this.requestPointerLock();
+  }
+
+  /** One pointer-lock request, swallowing the rejection a failed attempt returns
+   *  (modern browsers reject the promise during the post-Esc cooldown; retries
+   *  are expected to fail until it lifts, so this must not spam the console). */
+  private requestPointerLock(): void {
+    const r = this.renderer.domElement.requestPointerLock() as unknown as
+      | Promise<void>
+      | undefined;
+    if (r && typeof r.catch === "function") r.catch(() => {});
   }
 
   /**
@@ -374,8 +396,20 @@ export class Game {
     this.lockGrace = Math.max(0, this.lockGrace - dt);
     const locked = this.input.isPointerLocked;
     const playing = this.flow.state === "playing";
+    // Re-request pointer lock across the browser's post-Esc cooldown so a
+    // Play/Restart/Resume click takes on the FIRST click (see acquirePointerLock).
+    // Stops the instant lock is granted; the click's transient activation still
+    // covers these rAF-driven retries. If it never takes, the grace lapses and
+    // the resume overlay below appears as the manual fallback.
+    if (playing && !locked && this.lockGrace > 0) {
+      this.lockRetryTimer -= dt;
+      if (this.lockRetryTimer <= 0) {
+        this.lockRetryTimer = GameConfig.shell.lockRetryInterval;
+        this.requestPointerLock();
+      }
+    }
     // Resume overlay: playing but lock lost (Esc / tab away), once the
-    // acquire-grace after a Play/Resume click has elapsed.
+    // acquire-grace (+ its lock retries) has elapsed without re-locking.
     this.screens.setResumeVisible(playing && !locked && this.lockGrace <= 0);
 
     if (playing && locked) {

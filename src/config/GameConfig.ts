@@ -36,11 +36,15 @@ export const GameConfig = {
     // this constant never gates the state transition. Kept short so the result
     // reads at once.
     fadeDuration: 0.25, // s
-    // Grace window after a Play / Resume click during which the "click to
-    // resume" overlay is suppressed: pointer lock is granted asynchronously
-    // (a frame or two after the gesture), and without this the overlay would
-    // flash for that gap. If lock is never granted, the overlay reappears.
-    lockAcquireGrace: 0.6, // s
+    // Grace window after a Play / Resume / Restart-round click during which the
+    // "click to resume" overlay is suppressed while pointer lock is (re)acquired.
+    // Sized to outlast the browser's post-Esc re-lock COOLDOWN (~1.25 s): after
+    // Esc opens the pause overlay, an immediate re-lock silently fails, so
+    // Game.update re-requests every lockRetryInterval across this window until it
+    // takes (one click restarts even straight after Esc). If lock never takes,
+    // the overlay reappears here as the manual fallback.
+    lockAcquireGrace: 2.0, // s
+    lockRetryInterval: 0.3, // s between pointer-lock re-requests within the grace
   },
 
   player: {
