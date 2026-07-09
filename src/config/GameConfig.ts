@@ -258,11 +258,16 @@ export const GameConfig = {
     decay: 1,
     flickerAmount: 0, // deeper, more unstable emergency flicker
     fixtureColor: 0x9fb08a, // sickly green-white emergency tint
-    // A fixture with NO intact block this close to its housing has been
-    // stranded — its room is gone — so it goes dark and its box vanishes. This
-    // is what kills floating lights: enclosure, not a durable anchor block. Sized
-    // to comfortably reach the ceiling deck / walls that mount a live fixture.
-    strandRange: 1.5,
+    // A fixture is stranded (goes dark AND its box vanishes) when NO intact
+    // block remains within this radius of its housing. A ceiling fixture sits
+    // EMBEDDED in the deck slab it hangs from (point-to-slab distance ≈ 0),
+    // while the room's partition walls are ≥ ~0.85 m away (≥ a grid half-cell),
+    // so this radius is deliberately TIGHT: it keys on the deck MOUNT, not on
+    // lateral walls. At the old 1.5 m a stray surviving wall kept a fixture lit
+    // after its ceiling was torn out — the "floating light" bug. Must stay above
+    // the embedded-mount distance (~0.06 m for the 6 cm-hung stair lights) and
+    // below the wall distance (~0.85 m). verify:hospital asserts 0 orphans here.
+    strandRange: 0.4,
   },
 
   // Interior wind shelter (StructureSystem.shelterExposureAt). Cheap AABB
