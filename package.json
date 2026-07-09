@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "verify:hospital": "tsx scripts/verify-hospital.ts",
     "verify:lightning": "tsx scripts/verify-lightning.ts",
-    "verify:flow": "tsx scripts/verify-flow.ts"
+    "verify:flow": "tsx scripts/verify-flow.ts",
+    "verify:boundary": "tsx scripts/verify-boundary.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",

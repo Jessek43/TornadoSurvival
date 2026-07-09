@@ -18,6 +18,24 @@ export const GameConfig = {
     groundSize: 300, // the industrial yard is a groundSize × groundSize square
   },
 
+  // The playable square — a hard, readable map edge (systems/PlayArea.ts + the
+  // boundary in systems/Boundary.ts read this). `halfExtent` is THE size dial:
+  // everything (walls, dressing ring, warning band) derives from it, so
+  // enlarging the map later is a change to this ONE number. Kept == groundSize/2
+  // so the boundary sits at the existing ground edge — the play area does NOT
+  // change size here. Heights/depths in metres are size-INDEPENDENT by design
+  // (a bigger map isn't a taller fence); band + slot POSITIONS scale with the dial.
+  PLAY_AREA: {
+    halfExtent: 150, // m from centre to each edge (== world.groundSize / 2)
+    wallHeight: 12, // m — tall enough the player can't mount/jump/clear it
+    wallThickness: 2, // m
+    dressingBandFraction: 0.06, // treeline depth as a fraction of halfExtent (→ ~9 m)
+    slotsPerSide: 26, // dressing props per edge → 104 total, deterministic
+    dressingSeed: 20260709,
+    warnBand: 14, // m from the edge: the "leaving the area" nudge turns on
+    warnHysteresis: 5, // m of extra re-entry before it clears (anti-flicker latch)
+  },
+
   round: {
     // Longer than the old 12s so there's a fair window to run into the large
     // hospital, find a stairwell, climb, and pick a room before the first
