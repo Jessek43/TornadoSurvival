@@ -1,16 +1,13 @@
 /**
- * Round messaging: the pulsing warning banner during the siren phase, and
- * the survived/died result screen with restart.
+ * In-round banner messaging: the pulsing tornado-warning banner during the
+ * siren phase and the live incoming/receding/clear pass-state line. The
+ * survived/died result screen used to live here too; it now belongs to the
+ * app-shell overlays (ui/Screens.ts), which own every menu/result surface.
  */
 export class RoundUI {
-  /** Wired by Game; fired when the player clicks the result screen. */
-  onRestart: (() => void) | null = null;
-
   private readonly banner: HTMLDivElement;
-  private resultShown = false;
-  private resultScreen: HTMLDivElement | null = null;
 
-  constructor(private readonly uiRoot: HTMLElement) {
+  constructor(uiRoot: HTMLElement) {
     injectStylesOnce();
 
     this.banner = document.createElement("div");
@@ -64,33 +61,6 @@ export class RoundUI {
       this.banner.style.display = "none";
     }
   }
-
-  showResult(kind: "survived" | "died"): void {
-    if (this.resultShown) return;
-    this.resultShown = true;
-    document.exitPointerLock();
-
-    const screen = document.createElement("div");
-    screen.className = "ts-result";
-    screen.innerHTML =
-      kind === "survived"
-        ? `<h1 style="color:#9fc48f">YOU SURVIVED</h1><p>The funnel has passed.</p>`
-        : `<h1 style="color:#c0453a">YOU DIED</h1><p>The storm took you.</p>`;
-    const hint = document.createElement("p");
-    hint.textContent = "Click or press R to restart";
-    hint.style.opacity = "0.7";
-    screen.appendChild(hint);
-    screen.addEventListener("click", () => this.onRestart?.());
-    this.uiRoot.appendChild(screen);
-    this.resultScreen = screen;
-  }
-
-  /** Remove the result overlay so an in-place restart starts clean. */
-  hideResult(): void {
-    this.resultScreen?.remove();
-    this.resultScreen = null;
-    this.resultShown = false;
-  }
 }
 
 let stylesInjected = false;
@@ -112,15 +82,6 @@ function injectStylesOnce(): void {
       background: rgba(38, 52, 44, .82); color: #b9c6b4;
       font-weight: 500; animation: none;
     }
-    .ts-result {
-      position: absolute; inset: 0; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 6px;
-      background: rgba(5, 8, 5, .78); color: #cfd6c3;
-      font: 15px system-ui; text-align: center;
-      pointer-events: auto; cursor: pointer;
-    }
-    .ts-result h1 { font-size: 44px; letter-spacing: 4px; margin: 0 0 8px; }
-    .ts-result p { margin: 2px; }
   `;
   document.head.appendChild(style);
 }

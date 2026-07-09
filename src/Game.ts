@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GameConfig } from "./config/GameConfig";
 import { resolveQuality, type QualitySettings } from "./config/QualitySettings";
-import { InputManager } from "./core/InputManager";
+import { InputManager, type InputState } from "./core/InputManager";
 import { Noise } from "./core/Noise";
 import { Physics } from "./core/Physics";
 import { Level } from "./level/Level";
@@ -27,6 +27,7 @@ import { WindField } from "./systems/WindField";
 import { DebugTools } from "./debug/DebugTools";
 import { HUD } from "./ui/HUD";
 import { RoundUI } from "./ui/RoundUI";
+import { Screens, type ResultSummary } from "./ui/Screens";
 
 /**
  * Sub-phase WITHIN an app-flow "playing" round: warning (siren, scout, pick
@@ -80,6 +81,7 @@ export class Game {
   // UI
   readonly hud: HUD;
   readonly roundUI: RoundUI;
+  private readonly screens: Screens;
   private readonly debug: DebugTools | null;
 
   /** Application flow: menu → playing → survived/died → restart. The shell owns
@@ -94,6 +96,14 @@ export class Game {
   /** The verdict awaiting the result-screen delay (resolving phase). */
   private pendingOutcome: "win" | "lose" | null = null;
   private resolveTimer = 0;
+  /** Round summary captured at resolution, shown on the result screen. */
+  private lastResult: ResultSummary | null = null;
+  /** Guard the first simulated frame after (re)acquiring pointer lock so a
+   *  paused stretch doesn't feed one huge dt into the storm. */
+  private resumeGuard = true;
+  /** Countdown suppressing the resume overlay while pointer lock is being
+   *  acquired (granted a frame or two after the Play/Resume click gesture). */
+  private lockGrace = 0;
 
   constructor(container: HTMLElement, uiRoot: HTMLElement) {
     this.quality = resolveQuality();
@@ -205,12 +215,21 @@ export class Game {
     // onFlowChange — the pure AppFlow just owns the legal transitions. Restart
     // is now an IN-PLACE rebuild (buildSession), not a page reload.
     this.flow = new AppFlow((from, to) => this.onFlowChange(from, to));
-    // TEMPORARY (until the menu's Play button lands in the screens commit): the
-    // result overlay's click routes back through the flow to rebuild in place.
-    this.roundUI.onRestart = () => {
-      if (this.flow.state === "survived") this.flow.transition("playAgain");
-      else if (this.flow.state === "died") this.flow.transition("retry");
-    };
+
+    // Screen overlays (menu / result / resume). Buttons drive the flow; Play /
+    // Resume additionally grab pointer lock from the click gesture. The goal
+    // line + result prose come from the single Objective (no duplicated text).
+    this.screens = new Screens(
+      uiRoot,
+      {
+        onPlay: () => this.startPlaying("start"),
+        onPlayAgain: () => this.startPlaying("playAgain"),
+        onRetry: () => this.startPlaying("retry"),
+        onToMenu: () => this.flow.transition("toMenu"),
+        onResume: () => this.acquirePointerLock(),
+      },
+      this.objective.describe(),
+    );
 
     this.debug = DebugTools.enabled()
       ? new DebugTools(
@@ -231,9 +250,25 @@ export class Game {
         )
       : null;
 
-    // TEMPORARY auto-start (the menu Play button replaces this in the screens
-    // commit): enter a round immediately, mirroring the old behavior.
-    this.flow.transition("start");
+    // Land on the menu: no session runs behind it (tear the constructor's build
+    // down to the clean menu state). The Play button starts the first round.
+    this.teardownSession();
+    this.screens.showMenu();
+  }
+
+  /** Enter (or restart) a round from a click gesture: grab pointer lock, then
+   *  drive the flow. Both happen inside the gesture so the lock request is
+   *  honored. `startPlaying` is used by Play / Play-again / Retry. */
+  private startPlaying(event: "start" | "playAgain" | "retry"): void {
+    this.acquirePointerLock();
+    this.flow.transition(event);
+  }
+
+  /** Request pointer lock and open the acquire-grace window (suppresses the
+   *  resume overlay until the browser grants the lock a frame or two later). */
+  private acquirePointerLock(): void {
+    this.lockGrace = GameConfig.shell.lockAcquireGrace;
+    void this.renderer.domElement.requestPointerLock();
   }
 
   /**
@@ -245,17 +280,19 @@ export class Game {
     switch (to) {
       case "playing":
         this.buildSession();
+        this.screens.hideAll();
         break;
       case "survived":
         document.exitPointerLock();
-        this.roundUI.showResult("survived");
+        this.screens.showResult("survived", this.lastResult);
         break;
       case "died":
         document.exitPointerLock();
-        this.roundUI.showResult("died");
+        this.screens.showResult("died", this.lastResult);
         break;
       case "menu":
         this.teardownSession();
+        this.screens.showMenu();
         break;
     }
   }
@@ -282,8 +319,14 @@ export class Game {
     this.lastHealth = this.damage.health;
     this.pendingOutcome = null;
     this.resolveTimer = 0;
-    this.roundUI.hideResult();
     this.roundUI.hideWarning();
+
+    // Snap the camera + mood to the fresh spawn ONCE (dt 0) so the couple of
+    // frames rendered before pointer lock is granted show the correct view, not
+    // a stale/default camera. The per-frame sim stages take over once locked.
+    this.cameraRig.update(0, this.time);
+    this.atmosphere.update(0, this.player.position);
+
     // Parity readout: sections + released-block count on entry (see ?debug).
     this.debug?.logSessionBaseline();
   }
@@ -294,13 +337,53 @@ export class Game {
     this.debris.reset();
     this.tornado.reset();
     this.lightning.reset();
-    this.roundUI.hideResult();
     this.roundUI.hideWarning();
   }
 
   update(dt: number): void {
-    // (1) Input — one snapshot per frame; systems never read the DOM directly.
+    // (1) Input — one snapshot per frame (always polled so mouse deltas don't
+    // accumulate while paused); systems never read the DOM directly.
     const input = this.input.poll();
+
+    // The shell decides whether the SIMULATION ticks: only while actively
+    // playing AND the pointer is locked. The menu, the result screens, and a
+    // lost pointer lock all freeze the sim — the round timer included — as one
+    // unit. There is still ONE update() and ONE caller (main.ts); render +
+    // overlays below always run so the canvas is never black while paused.
+    this.lockGrace = Math.max(0, this.lockGrace - dt);
+    const locked = this.input.isPointerLocked;
+    const playing = this.flow.state === "playing";
+    // Resume overlay: playing but lock lost (Esc / tab away), once the
+    // acquire-grace after a Play/Resume click has elapsed.
+    this.screens.setResumeVisible(playing && !locked && this.lockGrace <= 0);
+
+    if (playing && locked) {
+      // Guard the first frame after (re)acquiring lock against a dt spike from
+      // the paused stretch.
+      const simDt = this.resumeGuard ? Math.min(dt, GameConfig.physics.fixedDt) : dt;
+      this.resumeGuard = false;
+      this.tickSimulation(simDt, input);
+    } else {
+      this.resumeGuard = true;
+    }
+
+    // (13) Render + overlays — every frame, even paused / on a menu.
+    this.atmosphere.render(dt);
+    this.hud.update(
+      this.damage.health,
+      this.player.stamina * 100,
+      this.player.runStamina * 100,
+      false, // click-to-play prompt superseded by the menu + resume overlay
+    );
+    this.debug?.update(dt);
+  }
+
+  /**
+   * The whole simulation — the round sub-phase machine plus the numbered sim
+   * stages. Runs only while playing with pointer lock (the shell's gate above);
+   * systems still never call each other's update, Game decides the order.
+   */
+  private tickSimulation(dt: number, input: InputState): void {
     if (input.flashlightPressed) this.flashlight.toggle();
 
     // (2) Round sub-phase within `playing`: warning (siren, scout, pick shelter)
@@ -339,6 +422,13 @@ export class Game {
           this.resolveTimer = GameConfig.shell.resultDelay;
           this.phase = "resolving";
           this.roundUI.hideWarning();
+          // Snapshot the summary now (tornado state is reset only next round).
+          this.lastResult = {
+            passesSurvived:
+              verdict === "won" ? this.tornado.passesTotal : this.tornado.passIndex,
+            passesTotal: this.tornado.passesTotal,
+            timeSec: Math.max(0, this.time - GameConfig.round.warningTime),
+          };
         }
         break;
       }
@@ -417,17 +507,6 @@ export class Game {
       this.phase === "warning" || (this.phase === "active" && this.tornado.state === "gap");
     this.alarm.set(alarmOn);
     this.audio.update(dt, this.time);
-
-    // (13) Render — the whole frame goes through the post chain.
-    this.atmosphere.render(dt);
-
-    this.hud.update(
-      this.damage.health,
-      this.player.stamina * 100,
-      this.player.runStamina * 100,
-      !this.input.isPointerLocked && this.flow.state === "playing",
-    );
-    this.debug?.update(dt);
   }
 
   onResize(width: number, height: number): void {

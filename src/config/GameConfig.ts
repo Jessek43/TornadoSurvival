@@ -37,6 +37,11 @@ export const GameConfig = {
     resultDelay: 1.6, // s
     // DOM cross-fade for the menu / result overlays (ui/Screens.ts).
     fadeDuration: 0.35, // s
+    // Grace window after a Play / Resume click during which the "click to
+    // resume" overlay is suppressed: pointer lock is granted asynchronously
+    // (a frame or two after the gesture), and without this the overlay would
+    // flash for that gap. If lock is never granted, the overlay reappears.
+    lockAcquireGrace: 0.6, // s
   },
 
   player: {
