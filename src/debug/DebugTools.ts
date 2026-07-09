@@ -47,6 +47,10 @@ export class DebugTools {
   /** World counters are recomputed at 1 Hz (they scan all blocks). */
   private counterTimer = 1;
   private counterText = "";
+  /** THREE.Light count with the world lights ATTACHED — captured at construction
+   *  (before the initial teardown detaches them) as the spawn baseline. On the
+   *  menu the live count drops to this minus the world-tied lights (→ sun+hemi). */
+  private lightBaseline = 0;
 
   // scratch
   private readonly wind = new THREE.Vector3();
@@ -61,7 +65,7 @@ export class DebugTools {
 
   constructor(
     uiRoot: HTMLElement,
-    scene: THREE.Scene,
+    private readonly scene: THREE.Scene,
     private readonly windField: WindField,
     private readonly tornado: TornadoSystem,
     private readonly player: PlayerController,
@@ -129,6 +133,20 @@ export class DebugTools {
     mat.add(MATERIALS.concrete, "breakThreshold", 50, 8000);
     mat.add(MATERIALS.metal, "breakThreshold", 50, 6000);
     mat.close();
+
+    // Capture the light baseline now, while the world lights are still attached
+    // (Game detaches them at the end of its constructor for the initial menu).
+    this.lightBaseline = this.countSceneLights();
+  }
+
+  /** THREE.Light instances currently reachable from the scene root — drops when
+   *  the world-lights group is detached (menu / teardown). */
+  private countSceneLights(): number {
+    let n = 0;
+    this.scene.traverse((o) => {
+      if ((o as THREE.Light).isLight) n++;
+    });
+    return n;
   }
 
   update(dt: number): void {
@@ -155,6 +173,10 @@ export class DebugTools {
         ` · bodies ${bodies} · released ${released}` +
         ` · debris ${this.debris.active}/${this.debris.budget}` +
         ` · orphanLit ${this.interiorLights.countOrphanLit()}` +
+        // lights: live THREE.Light in the scene vs the attached baseline (drops to
+        // the durable sun+hemi on the menu). dressing: fixtures still lit vs total.
+        ` · lights ${this.countSceneLights()}/${this.lightBaseline}` +
+        ` · dressing ${this.interiorLights.liveFixtures}/${this.interiorLights.fixtureCount}` +
         ` · draw ${this.renderer.info.render.calls}`;
     }
 
@@ -228,8 +250,14 @@ export class DebugTools {
   logSessionBaseline(): void {
     let released = 0;
     for (const s of this.structures.structures) released += s.releasedCount;
+    // lights + dressing extend the same restart-parity check: after a menu→play
+    // round-trip they must read identically to the first spawn (all fixtures
+    // re-lit, world lights re-attached).
     console.info(
-      `[session] entered playing · sections ${this.structures.structures.length} · released ${released}`,
+      `[session] entered playing · sections ${this.structures.structures.length}` +
+        ` · released ${released}` +
+        ` · lights ${this.countSceneLights()}/${this.lightBaseline}` +
+        ` · dressing ${this.interiorLights.liveFixtures}/${this.interiorLights.fixtureCount}`,
     );
   }
 

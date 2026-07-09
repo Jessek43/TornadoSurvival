@@ -228,6 +228,10 @@ function findMapOverlaps(hospital: Box[], neighborhood: Box[]): string[] {
 // are raised and re-asserted against the new build (largest section printed).
 const MAX_SECTION_BLOCKS = 1400;
 const MAX_TOTAL_BLOCKS = 16000;
+/** Floor on the light-fixture (dressing) count at spawn: the orphan check stays
+ *  green even if the fixtures collapse to near-zero, so a named minimum guards a
+ *  regression that silently drops the dressing (dark hospital). */
+const MIN_LIGHT_FIXTURES = 8;
 const CAPSULE_R = 0.35; // player capsule radius (GameConfig.player.radius)
 
 /**
@@ -894,6 +898,12 @@ export function verifyHospital(
   info.push(...stairGaps.info);
   push("interior glass blocks", findInteriorGlass(boxes, exteriorFaces));
   push("fixtures without enclosure", findOrphanFixtures(boxes, fixtures));
+  // Every fixture resolves to a durable host block within strandRange (above);
+  // this named floor additionally guards the dressing never silently collapsing.
+  info.push(`light fixtures (dressing) at spawn: ${fixtures.length} (min ${MIN_LIGHT_FIXTURES})`);
+  if (fixtures.length < MIN_LIGHT_FIXTURES) {
+    failures.push(`only ${fixtures.length} light fixtures (< ${MIN_LIGHT_FIXTURES}) — dressing lost?`);
+  }
   push("unsupported-at-birth blocks", findUnsupported(sections));
   if (opts.neighborhood) {
     push("hospital↔neighborhood overlaps", findMapOverlaps(boxes, toBoxes(opts.neighborhood)));
