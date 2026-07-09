@@ -23,7 +23,7 @@ import { BOUNDARY_GROUPS } from "./CollisionGroups";
  */
 export class Boundary {
   private readonly colliderHandles: number[] = [];
-  /** Instanced perimeter props (built in a later step). */
+  /** Count of instanced perimeter props (one tree per dressing slot). */
   propCount = 0;
 
   constructor(
@@ -44,7 +44,62 @@ export class Boundary {
       );
       this.colliderHandles.push(collider.handle);
     }
-    void this.parent; // dressing (a later step) parents its instanced meshes here
+
+    this.buildDressing();
+  }
+
+  /**
+   * Instanced, INDESTRUCTIBLE treeline just inside the edge — the band that
+   * makes the boundary visible before it is felt. One InstancedMesh per prop
+   * part (trunk + canopy = 2 draw calls) parented to the permanent group. These
+   * are static scenery: NOT section blocks, NOT registered with any dressing
+   * binder, NOT bound to a host block, NOT part of the fracture pipeline — so the
+   * hospital `dressing:` count is untouched. Built once from PlayArea.dressingSlots.
+   */
+  private buildDressing(): void {
+    const slots = this.playArea.dressingSlots();
+    // Base tree (unit scale): a stubby trunk with a conifer cone, kept well under
+    // the wall height so the wall stays the hard stop while the treeline reads.
+    const trunkGeo = new THREE.CylinderGeometry(0.28, 0.36, 3, 6);
+    const canopyGeo = new THREE.ConeGeometry(2.2, 5.5, 7);
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3f3326, roughness: 0.95 });
+    const canopyMat = new THREE.MeshStandardMaterial({ color: 0x2f4a2c, roughness: 0.9 });
+
+    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, slots.length);
+    const canopies = new THREE.InstancedMesh(canopyGeo, canopyMat, slots.length);
+    for (const m of [trunks, canopies]) {
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.frustumCulled = false; // the ring spans the whole map — cull as one draw call
+    }
+
+    const mat4 = new THREE.Matrix4();
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const euler = new THREE.Euler();
+    const scl = new THREE.Vector3();
+    const color = new THREE.Color();
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      const scale = s.scale;
+      quat.setFromEuler(euler.set(0, s.rotationY, 0));
+      scl.set(scale, scale, scale);
+      // Trunk: geo is centred, so lift its centre to (height/2)*scale to sit on ground.
+      mat4.compose(pos.set(s.x, 1.5 * scale, s.z), quat, scl);
+      trunks.setMatrixAt(i, mat4);
+      // Canopy: base meets the trunk top (3*scale); cone centre is base + 5.5/2.
+      mat4.compose(pos.set(s.x, 5.75 * scale, s.z), quat, scl);
+      canopies.setMatrixAt(i, mat4);
+      // Deterministic per-tree shade jitter so the row doesn't read as one clone.
+      const j = 0.85 + 0.3 * (((i * 2654435761) >>> 0) % 1000) / 1000;
+      canopies.setColorAt(i, color.setHex(0x2f4a2c).multiplyScalar(j));
+    }
+    trunks.instanceMatrix.needsUpdate = true;
+    canopies.instanceMatrix.needsUpdate = true;
+    if (canopies.instanceColor) canopies.instanceColor.needsUpdate = true;
+
+    this.parent.add(trunks, canopies);
+    this.propCount = slots.length;
   }
 
   get colliderCount(): number {
