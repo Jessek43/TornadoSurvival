@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "verify:hospital": "tsx scripts/verify-hospital.ts",
-    "verify:lightning": "tsx scripts/verify-lightning.ts"
+    "verify:lightning": "tsx scripts/verify-lightning.ts",
+    "verify:flow": "tsx scripts/verify-flow.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",
