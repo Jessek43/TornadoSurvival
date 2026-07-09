@@ -17,6 +17,7 @@ import type { Boundary } from "../systems/Boundary";
 import { LightningConfig } from "../config/LightningConfig";
 import type { Physics } from "../core/Physics";
 import type { StairLight } from "../level/hospital/params";
+import { isDebugEnabled } from "./debugFlag";
 
 const PATH_CAPACITY = 2000; // ≈10 min of breadcrumbs at 0.3 s intervals
 
@@ -31,7 +32,7 @@ const PATH_CAPACITY = 2000; // ≈10 min of breadcrumbs at 0.3 s intervals
  */
 export class DebugTools {
   static enabled(): boolean {
-    return new URLSearchParams(location.search).has("debug");
+    return isDebugEnabled(location.search);
   }
 
   private readonly label: HTMLDivElement;
