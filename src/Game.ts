@@ -222,8 +222,10 @@ export class Game {
       uiRoot,
       {
         onPlay: () => this.startPlaying("start"),
-        onPlayAgain: () => this.startPlaying("playAgain"),
-        onRetry: () => this.startPlaying("retry"),
+        // ONE restart path: the survived/died "play again"/"retry" buttons AND
+        // the pause overlay's "restart round" all fire the same `restart` event,
+        // so all three funnel through the identical buildSession teardown.
+        onRestart: () => this.startPlaying("restart"),
         onToMenu: () => this.flow.transition("toMenu"),
         onResume: () => this.acquirePointerLock(),
       },
@@ -258,7 +260,7 @@ export class Game {
   /** Enter (or restart) a round from a click gesture: grab pointer lock, then
    *  drive the flow. Both happen inside the gesture so the lock request is
    *  honored. `startPlaying` is used by Play / Play-again / Retry. */
-  private startPlaying(event: "start" | "playAgain" | "retry"): void {
+  private startPlaying(event: "start" | "restart"): void {
     this.acquirePointerLock();
     this.flow.transition(event);
   }
@@ -290,6 +292,10 @@ export class Game {
         this.screens.showResult("died", this.lastResult);
         break;
       case "menu":
+        // Reachable from a terminal (already unlocked) OR from the pause overlay
+        // (playing → menu); release lock either way so the cursor frees for the
+        // menu. A no-op when already unlocked.
+        document.exitPointerLock();
         this.teardownSession();
         this.screens.showMenu();
         break;

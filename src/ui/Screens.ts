@@ -22,8 +22,10 @@ import {
  */
 export interface ScreenCallbacks {
   onPlay: () => void;
-  onPlayAgain: () => void;
-  onRetry: () => void;
+  /** Re-enter playing from a terminal (survived/died "play again"/"retry") OR
+   *  from the pause overlay ("restart round") — one event, one teardown path. */
+  onRestart: () => void;
+  /** Return to the main menu (from a terminal or from the pause overlay). */
   onToMenu: () => void;
   onResume: () => void;
 }
@@ -66,13 +68,11 @@ export class Screens {
     this.resultHeading = el("h1", "ts-result-h", "");
     this.resultBody = el("p", "ts-result-body", "");
     const goalEcho = el("p", "ts-goal", goalText);
-    this.resultPrimary = button("", () => {}, "ts-primary");
+    this.resultPrimary = button("", cb.onRestart, "ts-primary");
     this.resultPrimaryLabel = el("span", "", "");
     this.resultPrimary.replaceChildren(this.resultPrimaryLabel);
-    // The primary button is Play again (survived) or Retry (died); its handler
-    // is (re)wired in showResult so one button serves both terminals.
-    this.resultPrimary.onclick = () =>
-      this.result.dataset.kind === "survived" ? cb.onPlayAgain() : cb.onRetry();
+    // One primary button for both terminals: only its LABEL differs (Play again
+    // vs Retry, set in showResult); the action is the single restart event.
     const menuBtn = button("MENU", cb.onToMenu, "ts-secondary");
     const btnRow = el("div", "ts-btn-row", "");
     btnRow.append(this.resultPrimary, menuBtn);

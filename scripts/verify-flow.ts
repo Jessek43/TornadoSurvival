@@ -16,6 +16,11 @@
 //     synthetic round, never both won and lost for one input.
 //  7. Settings: clampSensitivity below→min / above→max / identity in range;
 //     loadSettings() returns the default (no throw) for every corrupt input.
+//  8. Round resolves with NO intervening timer/gap state: win/lose are DIRECT
+//     playing→terminal edges, and the objective flips terminal the frame the
+//     final funnel is gone.
+//  9. Pause menu: pause→restart and died→restart are the SAME transition; pause→
+//     menu is legal; pause actions never reach a terminal.
 import { AppFlow, type AppState, type AppEvent } from "../src/systems/AppFlow";
 import { SurviveAllPasses, type ObjectiveState } from "../src/systems/Objective";
 import {
@@ -44,7 +49,7 @@ function expectThrow(fn: () => void, label: string): void {
 }
 
 const ALL_STATES: AppState[] = ["menu", "playing", "survived", "died"];
-const ALL_EVENTS: AppEvent[] = ["start", "win", "lose", "playAgain", "retry", "toMenu"];
+const ALL_EVENTS: AppEvent[] = ["start", "win", "lose", "restart", "toMenu"];
 
 /** Replay a path of events on a fresh flow (AppFlow always starts at `menu`). */
 function flowAfter(path: AppEvent[]): AppFlow {
@@ -101,11 +106,11 @@ console.log("\n--- edge-trigger ---");
 let onChangeFires = 0;
 const flow = new AppFlow(() => onChangeFires++);
 // A legal walk touching several distinct edges once each.
-flow.transition("start"); // menu->playing
-flow.transition("win"); //   playing->survived
-flow.transition("playAgain"); // survived->playing
-flow.transition("lose"); //   playing->died
-flow.transition("retry"); //  died->playing
+flow.transition("start"); //   menu->playing
+flow.transition("win"); //     playing->survived
+flow.transition("restart"); // survived->playing
+flow.transition("lose"); //    playing->died
+flow.transition("restart"); // died->playing
 const legalCount = 5;
 // Illegal attempts in the middle must not fire anything.
 expectThrow(() => flow.transition("start"), "playing --start--> throws (illegal mid-walk)");
@@ -122,10 +127,10 @@ check(
 console.log("\n--- illegal transitions throw ---");
 expectThrow(() => new AppFlow().transition("win"), "menu --win--> throws");
 expectThrow(() => new AppFlow().transition("lose"), "menu --lose--> throws");
-expectThrow(() => new AppFlow().transition("retry"), "menu --retry--> throws");
-expectThrow(() => flowAfter(["start"]).transition("playAgain"), "playing --playAgain--> throws");
-expectThrow(() => flowAfter(["start", "win"]).transition("retry"), "survived --retry--> throws");
-expectThrow(() => flowAfter(["start", "lose"]).transition("playAgain"), "died --playAgain--> throws");
+expectThrow(() => new AppFlow().transition("restart"), "menu --restart--> throws");
+expectThrow(() => flowAfter(["start"]).transition("start"), "playing --start--> throws");
+expectThrow(() => flowAfter(["start", "win"]).transition("win"), "survived --win--> throws");
+expectThrow(() => flowAfter(["start", "lose"]).transition("lose"), "died --lose--> throws");
 
 // --- 5. exhaustive: every (state,event) is either a move or a throw ----------
 console.log("\n--- exhaustiveness ---");
@@ -210,6 +215,47 @@ saveSettings({ sensitivity: 2 }, mem);
 check(loadSettings(mem).sensitivity === 2, "save/load round-trip preserves an in-range value (2)");
 saveSettings({ sensitivity: 999 }, mem);
 check(loadSettings(mem).sensitivity === SENSITIVITY_MAX, `save clamps out-of-range → load returns ${SENSITIVITY_MAX}`);
+
+// --- 8. immediate resolution: no intervening timer/gap state -----------------
+// Item 2 at the state-machine level. The flow has NO intermediate state between
+// playing and a terminal — win/lose are direct edges (there is no resolving/gap
+// AppState) — and the objective flips terminal the frame the final funnel is
+// gone, with no pending "phantom gap" frame in between.
+console.log("\n--- immediate resolution (no phantom gap / timer) ---");
+check(targetOf("playing", ["start"], "win") === "survived", "playing --win--> survived (direct, no timer state)");
+check(targetOf("playing", ["start"], "lose") === "died", "playing --lose--> died (direct, no timer state)");
+check(ALL_STATES.length === 4, "no intermediate resolving/gap AppState (exactly menu/playing/survived/died)");
+check(
+  obj.evaluate({ dead: false, tornadoDone: true, passesTotal: 2 }) === "won",
+  "final funnel gone → won on THAT frame (no gap wait)",
+);
+check(
+  obj.evaluate({ dead: false, tornadoDone: false, passesTotal: 2 }) === "pending",
+  "final pass still up → pending (resolves only once gone)",
+);
+
+// --- 9. pause menu transitions ----------------------------------------------
+// pause == the `playing` state with pointer lock lost. "Restart round" from
+// pause and "retry" from died must be the SAME transition: the SAME event, both
+// landing in playing (so both hit the identical buildSession teardown path).
+console.log("\n--- pause menu ---");
+const pauseRestart = targetOf("playing", ["start"], "restart");
+const diedRestart = targetOf("died", ["start", "lose"], "restart");
+check(pauseRestart === "playing", "pause --restart--> playing");
+check(diedRestart === "playing", "died --restart--> playing");
+check(
+  pauseRestart === diedRestart,
+  "pause-restart and died-restart converge on the SAME transition (event restart → playing)",
+);
+check(
+  targetOf("survived", ["start", "win"], "restart") === "playing",
+  "survived --restart--> playing (one restart event for all three)",
+);
+check(targetOf("playing", ["start"], "toMenu") === "menu", "pause --toMenu--> menu (legal)");
+// The pause menu's own actions never jump to a terminal — only the objective's
+// win/lose do that.
+check(targetOf("playing", ["start"], "restart") !== "survived", "pause --restart--> never survived");
+check(targetOf("playing", ["start"], "toMenu") !== "survived", "pause --toMenu--> never survived");
 
 if (failures > 0) {
   throw new Error(`${failures} app-flow invariant violation(s)`);

@@ -1,8 +1,10 @@
 /**
  * Application-level flow: the state machine that wraps the in-round `Game`.
  *
- *   menu → (start) → playing → survived | died → (restart) → playing
- *                                              → (toMenu)   → menu
+ *   menu → (start) → playing → survived | died
+ *                       ↑   ↖ (restart) ↙  (restart re-enters playing)
+ *                    (restart, from the pause overlay: playing → playing)
+ *   survived | died | playing → (toMenu) → menu
  *
  * Deliberately pure — no THREE, no Rapier, no DOM — exactly like
  * AlarmController: the shell's screen/tick side-effects are decided elsewhere
@@ -15,9 +17,14 @@
  */
 export type AppState = "menu" | "playing" | "survived" | "died";
 
-/** Events the shell emits. `playAgain`/`retry` both re-enter `playing` (from
- *  survived / died respectively); `toMenu` returns from either terminal. */
-export type AppEvent = "start" | "win" | "lose" | "playAgain" | "retry" | "toMenu";
+/**
+ * Events the shell emits. There is exactly ONE restart event: `restart`
+ * re-enters `playing` from a terminal (survived/died) AND from `playing` itself
+ * (the pause overlay's "restart round"), so both restarts are literally the same
+ * transition and share the one teardown/buildSession path. `toMenu` returns to
+ * the menu from either terminal or from `playing` (pause → main menu).
+ */
+export type AppEvent = "start" | "win" | "lose" | "restart" | "toMenu";
 
 export class AppFlow {
   private current: AppState = "menu";
@@ -60,11 +67,19 @@ export class AppFlow {
       case "menu":
         return event === "start" ? "playing" : null;
       case "playing":
-        return event === "win" ? "survived" : event === "lose" ? "died" : null;
+        // win/lose are the objective's; restart/toMenu are the pause overlay's.
+        return event === "win"
+          ? "survived"
+          : event === "lose"
+            ? "died"
+            : event === "restart"
+              ? "playing"
+              : event === "toMenu"
+                ? "menu"
+                : null;
       case "survived":
-        return event === "playAgain" ? "playing" : event === "toMenu" ? "menu" : null;
       case "died":
-        return event === "retry" ? "playing" : event === "toMenu" ? "menu" : null;
+        return event === "restart" ? "playing" : event === "toMenu" ? "menu" : null;
       default: {
         // Unreachable: the union above is exhaustive. If a new AppState is added
         // without a case, `state` is no longer `never` and this fails to compile.

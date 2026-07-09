@@ -52,8 +52,9 @@ check(
 console.log("\n--- alarm edge-triggering ---");
 
 // The exact Game decision: audible during warning + between-pass gap, silent
-// while a funnel is present ("pass"), silent when the storm is done.
-type Frame = { phase: "warning" | "active" | "result"; state: "idle" | "pass" | "gap" | "done" };
+// while a funnel is present ("pass"), silent when the storm is done. (Game wraps
+// this in `flow === playing && locked`; that gate is exercised in verify-flow.)
+type Frame = { phase: "warning" | "active"; state: "idle" | "pass" | "gap" | "done" };
 const alarmDesired = (f: Frame): boolean =>
   f.phase === "warning" || (f.phase === "active" && f.state === "gap");
 
@@ -88,6 +89,52 @@ check(alarm.playing === false, "alarm silent at end (storm done)");
 const flat = new AlarmController(() => {}, () => {});
 for (let i = 0; i < 100; i++) flat.set(true);
 check(flat.starts === 1 && flat.stops === 0, `100 identical ticks → 1 start (got ${flat.starts})`);
+
+// --- 4. round resolution: NO phantom gap after the final pass ----------------
+// Regression guard for the phantom-gap bug. The FIXED round goes
+// warning → pass → gap → pass(final) → done — the final pass recedes STRAIGHT to
+// "done", never to a gap — so the siren must not restart after the final pass.
+console.log("\n--- final-pass resolution (no phantom gap) ---");
+const warningBlock = rep<Frame>({ phase: "warning", state: "idle" }, 3);
+const pass0 = rep<Frame>({ phase: "active", state: "pass" }, 4);
+const gap0 = rep<Frame>({ phase: "active", state: "gap" }, 3); // the real between-pass gap
+const passFinal = rep<Frame>({ phase: "active", state: "pass" }, 4);
+const resolve = rep<Frame>({ phase: "active", state: "done" }, 3); // straight to done, no gap
+const warningEntries = 1;
+const gapEntries = 1;
+
+const round = new AlarmController(() => {}, () => {});
+[...warningBlock, ...pass0, ...gap0].forEach((f) => round.set(alarmDesired(f)));
+const startsBeforeFinal = round.starts; // warning + gap = 2
+const stopsBeforeFinal = round.stops; // pass0 = 1
+passFinal.forEach((f) => round.set(alarmDesired(f)));
+check(round.stops === stopsBeforeFinal + 1, "exactly one stop edge on entering the final pass");
+check(round.starts === startsBeforeFinal, "no start edge on the final pass");
+resolve.forEach((f) => round.set(alarmDesired(f)));
+check(round.starts === startsBeforeFinal, "no start edge fires after the final pass (resolve)");
+check(round.stops === stopsBeforeFinal + 1, "stop edge never re-fires after the final pass");
+check(
+  round.starts === warningEntries + gapEntries,
+  `start edges == warning + gap entries (${warningEntries + gapEntries}, got ${round.starts})`,
+);
+check(round.playing === false, "siren silent once the round resolves to done");
+
+// --- 5. two-funnel: state leaves "pass" only after ALL funnels recede --------
+// The tornado state stays "pass" while ANY funnel is present, so the siren stays
+// silent through the whole (staggered) pass and only the resolve to "done"
+// follows — no phantom gap while one funnel lingers.
+console.log("\n--- two-funnel resolution ---");
+const twoFunnel: Frame[] = [
+  ...rep<Frame>({ phase: "warning", state: "idle" }, 2),
+  ...rep<Frame>({ phase: "active", state: "pass" }, 3), // both funnels up
+  ...rep<Frame>({ phase: "active", state: "pass" }, 3), // one receded, other still up → still "pass"
+  ...rep<Frame>({ phase: "active", state: "done" }, 2), // all receded → resolve (no gap)
+];
+const two = new AlarmController(() => {}, () => {});
+twoFunnel.forEach((f) => two.set(alarmDesired(f)));
+check(two.starts === 1, `two-funnel: single start (warning only), no restart while any funnel present (got ${two.starts})`);
+check(two.stops === 1, `two-funnel: single stop at pass start, none after (got ${two.stops})`);
+check(two.playing === false, "two-funnel: silent once all funnels recede + resolve");
 
 function rep<T>(v: T, n: number): T[] {
   return Array.from({ length: n }, () => v);
