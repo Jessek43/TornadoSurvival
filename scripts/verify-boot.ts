@@ -10,6 +10,7 @@ import {
   type BootState,
   type BootTransition,
 } from "../src/systems/BootFlow";
+import { routeBootTransition, type BootAction } from "../src/boot/bootRoute";
 import { isDebugEnabled } from "../src/debug/debugFlag";
 
 let failures = 0;
@@ -216,6 +217,76 @@ console.log("\n--- debug gating ---");
   check(isDebugEnabled("?debug"), `?debug enables debug`);
   check(isDebugEnabled("?debug&bare"), `?debug&bare enables debug`);
   check(widgetsWithoutDebug === 0, `debug widgets constructed without ?debug: ${widgetsWithoutDebug}`);
+}
+
+// --- 10. consumer contract: post-ready transitions are routed to the DOM -----
+// These test the seam BETWEEN BootFlow and its consumer (the pure router
+// main.ts applies), not BootFlow alone — the earlier bug was that a post-`ready`
+// error transition WAS emitted but the consumer dropped it. Drive the flow to
+// `ready`, then raise the fault, and assert the router produces the right action.
+console.log("\n--- consumer routing contract (post-ready) ---");
+
+/** A flow driven to `ready`, capturing ONLY the transitions routed after ready. */
+function readyRouted(): { flow: BootFlow; routed: BootAction[] } {
+  const routed: BootAction[] = [];
+  const flow = new BootFlow(TWO_TASKS, (t) => routed.push(routeBootTransition(t)));
+  flow.capabilityChecked(OK_CAP);
+  for (const id of TWO_TASKS) flow.taskCompleted(id);
+  routed.length = 0; // discard loading/ready — keep only what fires POST-ready
+  return { flow, routed };
+}
+
+{
+  const { flow, routed } = readyRouted();
+  flow.errorRaised("error");
+  const ok = routed.length === 1 && routed[0].screen === "error";
+  check(ok, `post-ready error routed: ${ok ? "1/1" : "0/1"}`);
+}
+{
+  const { flow, routed } = readyRouted();
+  flow.contextLost();
+  const ok = routed.length === 1 && routed[0].screen === "contextLost";
+  check(ok, `post-ready contextLost routed: ${ok ? "1/1" : "0/1"}`);
+}
+{
+  // The two faults route to DISTINCT screens (a lost context reads differently).
+  const errScreen = routeBootTransition({ from: "ready", to: "error", errorKind: "error" }).screen;
+  const ctxScreen = routeBootTransition({
+    from: "ready",
+    to: "error",
+    errorKind: "contextLost",
+  }).screen;
+  const distinct = errScreen !== ctxScreen ? 2 : 1;
+  check(distinct === 2, `distinct screen keys: ${distinct}/2 (${errScreen} vs ${ctxScreen})`);
+}
+{
+  // Idempotence survives the handoff: 50 post-ready errors → 1 routed transition.
+  const { flow, routed } = readyRouted();
+  for (let i = 0; i < 50; i++) flow.errorRaised("error");
+  check(routed.length === 1, `post-ready error transitions: ${routed.length} (expected 1)`);
+}
+{
+  // Loop-cancel (fatal) is requested exactly once, on the first post-ready error.
+  const { flow, routed } = readyRouted();
+  flow.errorRaised("error");
+  const cancels = routed.filter((a) => a.fatal).length;
+  check(cancels === 1, `cancel requests (error): ${cancels} (expected 1)`);
+}
+{
+  // ...and exactly once on context loss.
+  const { flow, routed } = readyRouted();
+  flow.contextLost();
+  const cancels = routed.filter((a) => a.fatal).length;
+  check(cancels === 1, `cancel requests (contextLost): ${cancels} (expected 1)`);
+}
+// Non-fatal transitions must NOT request a loop cancel (guards against a router
+// that stops the game on the loading/ready handoff).
+{
+  const nonFatal = (["loading", "unsupported", "ready"] as const).map(
+    (s) => routeBootTransition({ from: "checking", to: s }).fatal,
+  );
+  const anyFatal = nonFatal.filter(Boolean).length;
+  check(anyFatal === 0, `non-fatal transitions requesting cancel: ${anyFatal} (expected 0)`);
 }
 
 if (failures > 0) {
