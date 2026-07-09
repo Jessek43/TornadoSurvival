@@ -5,6 +5,7 @@ import type { Physics } from "../core/Physics";
 import type { InputState } from "../core/InputManager";
 import type { WindField } from "./WindField";
 import type { DamageSystem } from "./DamageSystem";
+import { PLAYER_GROUPS } from "./CollisionGroups";
 
 /**
  * First-person player. Two physical representations, one at a time:
@@ -119,7 +120,10 @@ export class PlayerController {
     // Rapier capsules are (half-height of the cylinder section, cap radius).
     const halfCylinder = height / 2 - radius;
     this.collider = physics.world.createCollider(
-      RAPIER.ColliderDesc.capsule(halfCylinder, radius),
+      // PLAYER collision group: unchanged interaction with the whole world (it
+      // still filters ALL), but a dedicated membership bit is what lets the map
+      // boundary walls stop the capsule while ignoring debris. See CollisionGroups.
+      RAPIER.ColliderDesc.capsule(halfCylinder, radius).setCollisionGroups(PLAYER_GROUPS),
       this.body,
     );
 

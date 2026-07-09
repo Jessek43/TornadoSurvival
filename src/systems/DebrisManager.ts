@@ -6,6 +6,7 @@ import type { Physics } from "../core/Physics";
 import type { QualitySettings } from "../config/QualitySettings";
 import type { WindField } from "./WindField";
 import { applyWorldSpaceMap, getBlockTexture } from "./BlockTextures";
+import { DEBRIS_GROUPS } from "./CollisionGroups";
 
 /**
  * Owns every loose dynamic block, under a hard budget (QualitySettings).
@@ -161,7 +162,12 @@ export class DebrisManager {
         .setDensity(def.density)
         // Contact-force events feed impact damage + crush detection (step 6).
         .setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS)
-        .setContactForceEventThreshold(2000),
+        .setContactForceEventThreshold(2000)
+        // DEBRIS collision group: the world minus the PLAYER bit, so flung debris
+        // passes THROUGH the map-boundary walls (which filter only PLAYER) and out
+        // of the world instead of piling against them. Collisions with ground,
+        // structures, the player and other debris are unchanged. See CollisionGroups.
+        .setCollisionGroups(DEBRIS_GROUPS),
       slot.body,
     );
 

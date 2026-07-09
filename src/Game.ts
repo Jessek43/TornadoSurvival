@@ -21,6 +21,8 @@ import { FunnelVisual } from "./systems/FunnelVisual";
 import { InteriorLights } from "./systems/InteriorLights";
 import { LightningSystem } from "./systems/LightningSystem";
 import { PlayerController } from "./systems/PlayerController";
+import { PlayArea } from "./systems/PlayArea";
+import { Boundary } from "./systems/Boundary";
 import { StructureSystem } from "./systems/StructureSystem";
 import { TornadoSystem } from "./systems/TornadoSystem";
 import { WindField } from "./systems/WindField";
@@ -57,6 +59,10 @@ export class Game {
    *  scene on teardown so a disposed world leaves NO lights behind — only the
    *  durable atmosphere sun + hemisphere remain on the scene root. */
   private readonly worldLights = new THREE.Group();
+  /** Subtree for PERMANENT world scenery that outlives every session — the map
+   *  boundary walls + treeline. Added to the scene once and never detached, so
+   *  the edge is present on the menu, during play, and unchanged across restart. */
+  private readonly permanent = new THREE.Group();
   private readonly camera: THREE.PerspectiveCamera;
 
   // Core
@@ -81,6 +87,10 @@ export class Game {
   readonly audio: AudioSystem;
   readonly interiorLights: InteriorLights;
   readonly lightning: LightningSystem;
+  /** The playable-square edge: pure geometry + the edge-warning latch. */
+  private readonly playArea: PlayArea;
+  /** Boundary colliders + perimeter dressing, built once from playArea. */
+  readonly boundary: Boundary;
   /** Edge-triggered siren: audible while warning/receding, silent while a
    *  funnel is present (see the alarm block in update). */
   readonly alarm: AlarmController;
@@ -131,6 +141,8 @@ export class Game {
     // World-tied lights live under this group (see field doc); the atmosphere
     // sun/hemi go straight on the scene root and survive teardown.
     this.scene.add(this.worldLights);
+    // Permanent scenery (map boundary) lives here — added once, never detached.
+    this.scene.add(this.permanent);
     this.camera = new THREE.PerspectiveCamera(
       GameConfig.camera.fov,
       window.innerWidth / window.innerHeight,
@@ -142,6 +154,10 @@ export class Game {
     this.input = new InputManager(this.renderer.domElement);
 
     this.level = new Level(this.scene, this.physics);
+    // The map edge: pure geometry + the static boundary walls + treeline. Built
+    // once into the permanent group / shared Rapier world; never torn down.
+    this.playArea = new PlayArea(GameConfig.PLAY_AREA);
+    this.boundary = new Boundary(this.permanent, this.physics, this.playArea);
     this.tornado = new TornadoSystem(this.noise);
     this.windField = new WindField(this.tornado, this.noise);
     this.funnelVisual = new FunnelVisual(this.scene, this.tornado, this.quality);
