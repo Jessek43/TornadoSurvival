@@ -159,8 +159,20 @@ export class DebugTools {
     }
 
     const sens = this.player.sensitivity / GameConfig.player.mouseSensitivity;
+    // Round phase (from the tornado state) + siren state — the two readouts for
+    // watching the final-pass resolution: `phase:` must go pass N/N → done with
+    // NO gap after the last pass, and `siren:` must read off from that point.
+    const t = this.tornado;
+    const phase =
+      t.state === "pass"
+        ? `pass ${t.passIndex + 1}/${t.passesTotal}`
+        : t.state === "gap"
+          ? `gap ${t.passIndex + 1}/${t.passesTotal}`
+          : t.state; // "idle" | "done"
+    const siren = this.alarm.playing ? "on" : "off";
     this.label.textContent =
       `${this.smoothedFps.toFixed(0)} fps · flow: ${this.flow.state} · sens: ${sens.toFixed(2)}` +
+      ` · phase: ${phase} · siren: ${siren}` +
       ` · tornado ` +
       (this.tornado.active
         ? `${this.tornado.position.distanceTo(this.player.position).toFixed(0)}m @ ${(
