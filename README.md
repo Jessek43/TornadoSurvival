@@ -22,9 +22,11 @@ npm run typecheck        # tsc --noEmit (strict)
 npm run verify:hospital  # static hospital build-time invariants (terminating)
 npm run verify:lightning # static lightning / alarm / round-resolution invariants
 npm run verify:flow      # static app-flow (menu → play → win/lose → restart) invariants
+npm run verify:boot      # static boot-flow (capability gate / loading gate / error latch) invariants
+npm run verify:boundary  # static map-boundary (PlayArea) invariants
 ```
 
-Requires a recent Node (18+) and a WebGL2-capable browser.
+Requires a recent Node (18+) and a **WebGL2- and WebAssembly-capable** browser. On startup the game feature-tests both; a browser or device missing either gets a static "can't run this browser" screen instead of a black canvas, and the game never starts.
 
 ## Controls
 
@@ -49,11 +51,27 @@ Bars in the corner show **Health** and **Grip** (stamina). Shelter inside the ho
 - **Lightning** cracks down during a pass — bolts strike buildings near the funnel, flash the sky, and tear blocks off whatever they hit. The tornado siren wails during the warning and between passes but falls silent while a funnel is bearing down (and the instant the round ends).
 - Survive every pass to **win** (a "you survived" screen); die at any point and the round **ends** (a "you died" screen). Both offer **Play again / Retry** (an in-place restart, no reload) and **Main menu**. The loop: `menu → play → survived | died → restart / menu`.
 
+## Startup & robustness
+
+Before the game itself runs, a small **boot state machine** guards the launch so a first-time visitor never gets a black screen:
+
+1. **Capability check** — feature-tests a real WebGL2 context and WebAssembly. If either is missing, a static fallback screen names what's absent and the game never starts (no renderer is executed).
+2. **Loading gate** — a progress bar driven by the *actual* awaited work (Rapier's WASM init + the world build). It only reaches 100% when the menu is ready — it never fakes progress.
+3. **Error overlay** — the first uncaught error or promise rejection shows an overlay and **stops the render loop** (so it can't re-throw every frame); the original error is always logged to the console. With `?debug` the overlay shows the stack, otherwise a short message and a reload button. A lost WebGL context gets its own distinct message.
+
+This is a separate machine from the in-game menu/round flow; see [`src/systems/BootFlow.ts`](src/systems/BootFlow.ts) and [`src/main.ts`](src/main.ts).
+
 ## URL parameters
 
 - `?quality=high|medium|low` — graphics preset (default `high`). Controls pixel ratio, shadows, fog/draw distance, debris budget, interior-light pool, and particle caps. See [`src/config/QualitySettings.ts`](src/config/QualitySettings.ts).
 - `?debug` — developer overlay: FPS meter, world counters (awake sections, bodies, released blocks, debris, **lights / dressing**), the app-flow + round readouts (`flow` / `phase` / `siren` / `sens`), and a live `lil-gui` panel that mutates tuning constants (`GameConfig`, `MATERIALS`) for balancing.
 - `?bare` — the Phase-1 structural shell of the hospital (columns instead of partition walls), the perf baseline.
+
+Dev-only flags for confirming the boot fallback screens in-browser (they inject at the boot state machine's inputs, adding no branch to the renderer or loop):
+
+- `?forceUnsupported=webgl` / `?forceUnsupported=wasm` — force the "can't run this browser" screen; the game never starts.
+- `?forceError` — raise a synthetic error one second after the menu loads: the error overlay appears once and the render loop stops.
+- `?forceContextLost` — exercise the distinct "graphics context lost" message.
 
 ## Architecture
 
@@ -61,8 +79,10 @@ One explicit fixed-timestep loop drives everything. [`src/Game.ts`](src/Game.ts)
 
 ```
 src/
-├── main.ts                 # bootstrap (awaits Rapier WASM, starts the rAF loop)
+├── main.ts                 # bootstrap: boot flow (capability + loading gate, error latch) → menu → rAF loop
 ├── Game.ts                 # owns all systems; THE update(dt) loop
+├── boot/
+│   └── capabilities.ts     # WebGL2 + WebAssembly feature-test (no THREE/Rapier import)
 ├── config/
 │   ├── GameConfig.ts       # all gameplay tuning constants in one place
 │   ├── LightningConfig.ts  # storm-lightning strike tuning (frequency, bolt, flash, damage)
@@ -93,12 +113,13 @@ src/
 │   ├── Flashlight.ts       # head-mounted spotlight (F)
 │   ├── LightningSystem.ts  # 3D bolt strikes: flash, structure damage, thunder
 │   ├── AlarmController.ts  # pure edge-triggered siren gate (silent while a funnel is present / paused / on menu)
+│   ├── BootFlow.ts         # pure boot state machine: checking → unsupported|loading → ready|error
 │   ├── AppFlow.ts          # pure app state machine: menu → playing → survived|died → restart/menu
 │   ├── Objective.ts        # the win condition in ONE seam (SurviveAllPasses)
 │   ├── Atmosphere.ts       # storm sky dome (image), fog, grade, lightning
 │   └── AudioSystem.ts      # procedural WebAudio (rumble, wind, thunder…)
-├── ui/                     # HUD + round banners + app-shell Screens (menu / result / pause overlays)
-└── debug/DebugTools.ts     # ?debug FPS + counters + lil-gui tuning panel
+├── ui/                     # HUD + round banners + app-shell Screens + BootOverlay (loading/unsupported/error)
+└── debug/                  # ?debug FPS + counters + lil-gui tuning panel (DebugTools) + debugFlag gate
 ```
 
 ### Performance discipline
