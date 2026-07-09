@@ -118,6 +118,17 @@ export class DebugTools {
 
     // Live tuning — these mutate the shared config objects directly.
     const gui = new GUI({ title: "tuning" });
+    // Anchor the panel flush inside the top-right corner. Without an explicit
+    // right offset it clipped off the right edge (body has overflow:hidden, so
+    // any overhang is simply cut, not scrollable); pin it 8px in and cap its
+    // height so a tall panel scrolls internally instead of running off-screen.
+    Object.assign(gui.domElement.style, {
+      position: "fixed",
+      top: "8px",
+      right: "8px",
+      maxHeight: "calc(100vh - 16px)",
+      overflowY: "auto",
+    });
     const tor = gui.addFolder("tornado");
     tor.add(GameConfig.tornado, "coreRadius", 3, 25);
     tor.add(GameConfig.tornado, "maxTangential", 10, 120);

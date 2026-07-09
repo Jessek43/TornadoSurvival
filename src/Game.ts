@@ -590,6 +590,12 @@ export class Game {
     this.audio.update(dt, this.time);
   }
 
+  /** The WebGL canvas — exposed so the boot wiring can listen for
+   *  `webglcontextlost` (a DOM event that never reaches window.onerror). */
+  get canvas(): HTMLCanvasElement {
+    return this.renderer.domElement;
+  }
+
   onResize(width: number, height: number): void {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();

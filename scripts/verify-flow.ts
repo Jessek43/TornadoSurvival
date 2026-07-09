@@ -87,6 +87,15 @@ while (queue.length) {
 }
 for (const st of ALL_STATES) check(seen.has(st), `state "${st}" reachable from menu`);
 check(seen.size === ALL_STATES.length, `all ${ALL_STATES.length} states reachable (got ${seen.size})`);
+// Launch-hardening guard: the boot machine (checking/unsupported/loading/ready/
+// error) is a SEPARATE BootFlow, never merged into AppFlow — so AppFlow must
+// still have EXACTLY its four states. `seen` is discovered by BFS over the real
+// transitions, so a state added to AppFlow would show up here. Zero added.
+const EXPECTED_APPFLOW_STATES = 4;
+check(
+  seen.size === EXPECTED_APPFLOW_STATES,
+  `AppFlow states: ${seen.size} (expected ${EXPECTED_APPFLOW_STATES}) — boot states not merged in`,
+);
 
 // --- 2. terminals reachable from playing + mutually exclusive ---------------
 console.log("\n--- terminals ---");
