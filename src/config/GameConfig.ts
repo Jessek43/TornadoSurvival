@@ -44,7 +44,7 @@ export const GameConfig = {
   },
 
   player: {
-    spawn: { x: 0, y: 0, z: 20 }, // feet position on the ground
+    spawn: { x: 10, y: 18, z: -15 }, // feet position on the ground
     height: 1.45, // capsule total height (m)
     radius: 0.35, // capsule radius (m)
     eyeHeight: 1.65, // camera height above the feet
@@ -111,7 +111,7 @@ export const GameConfig = {
     // safe floor stays above a normal jump landing (~4.8 m/s) so jumping and
     // ≤1.8 m hops never hurt. Tunable live via the fall readout in ?debug.
     fallSafeSpeed: 8, // m/s of landing speed below which a fall is harmless
-    fallDamageFactor: 11, // hp per m/s of landing speed beyond fallSafeSpeed
+    fallDamageFactor: 20, // hp per m/s of landing speed beyond fallSafeSpeed
   },
 
   damage: {

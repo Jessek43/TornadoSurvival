@@ -22,7 +22,7 @@ export class Flashlight {
   private on = false;
   private readonly dir = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene) {
+  constructor(parent: THREE.Object3D) {
     const cfg = GameConfig.flashlight;
     this.light = new THREE.SpotLight(
       cfg.color,
@@ -33,11 +33,11 @@ export class Flashlight {
       cfg.decay,
     );
     this.light.castShadow = false;
-    scene.add(this.light);
+    parent.add(this.light);
     // The spot aims at its target's world position; keep a dedicated node we
-    // reposition each frame (also in the scene so its matrix updates on render).
+    // reposition each frame (also parented so its matrix updates on render).
     this.target = new THREE.Object3D();
-    scene.add(this.target);
+    parent.add(this.target);
     this.light.target = this.target;
   }
 

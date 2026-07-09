@@ -91,7 +91,9 @@ export class LightningSystem {
   private readonly tmpTarget = new THREE.Vector2();
 
   constructor(
-    private readonly scene: THREE.Scene,
+    /** Render parent — the world-lights Group the shell detaches on teardown
+     *  (bolts / strike light / scorch leave with the world), not the scene root. */
+    private readonly scene: THREE.Object3D,
     private readonly tornado: TornadoSystem,
     private readonly structures: StructureSystem,
     private readonly atmosphere: Atmosphere,

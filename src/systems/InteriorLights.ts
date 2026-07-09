@@ -54,7 +54,9 @@ export class InteriorLights {
   private time = 0;
 
   constructor(
-    scene: THREE.Scene,
+    /** Render parent — a world-lights Group the shell detaches on teardown, not
+     *  the scene root, so these lights leave with the world (see Game). */
+    parent: THREE.Object3D,
     fixturePositions: [number, number, number][],
     quality: QualitySettings,
     private readonly noise: Noise,
@@ -89,7 +91,7 @@ export class InteriorLights {
       this.fixtureMesh.setColorAt(i, this.baseColor);
     }
     this.fixtureMesh.instanceMatrix.needsUpdate = true;
-    scene.add(this.fixtureMesh);
+    parent.add(this.fixtureMesh);
 
     // --- pooled real point lights ---
     const n = Math.min(quality.interiorLightPool, this.fixtures.length);
@@ -101,10 +103,49 @@ export class InteriorLights {
         GameConfig.interiorLights.decay, // softened so one light fills a room
       );
       light.castShadow = false;
-      scene.add(light);
+      parent.add(light);
       this.pool.push(light);
       this.poolFixture.push(-1);
     }
+  }
+
+  /** Number of fixtures still alive (not stranded). Debug readout: `dressing`
+   *  live/baseline (fixtures are the only decorative light dressing). */
+  get liveFixtures(): number {
+    let n = 0;
+    for (let i = 0; i < this.dead.length; i++) if (!this.dead[i]) n++;
+    return n;
+  }
+
+  /** Total fixtures (the baseline for the debug readout). */
+  get fixtureCount(): number {
+    return this.fixtures.length;
+  }
+
+  /**
+   * Restart parity: un-strand every fixture and restore its box + colour to the
+   * first-spawn baseline, and zero the pooled lights. The `dead` latch is
+   * monotonic WITHIN a round, but a rebuilt world (buildSession) restores the
+   * rooms, so their lights must come back too — otherwise a room destroyed last
+   * round stays dark this round. (The world-lights Group is re-attached by the
+   * shell; this only resets internal state + instance data.)
+   */
+  reset(): void {
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < this.fixtures.length; i++) {
+      this.dead[i] = false;
+      m.setPosition(this.fixtures[i]);
+      this.fixtureMesh.setMatrixAt(i, m);
+      this.fixtureMesh.setColorAt(i, this.baseColor);
+    }
+    this.fixtureMesh.instanceMatrix.needsUpdate = true;
+    if (this.fixtureMesh.instanceColor) this.fixtureMesh.instanceColor.needsUpdate = true;
+    this.probeCursor = 0;
+    for (let s = 0; s < this.pool.length; s++) {
+      this.pool[s].intensity = 0;
+      this.poolFixture[s] = -1;
+    }
+    this.time = 0;
   }
 
   /** Is fixture `index` still lit? (Not yet stranded dark.) Used by the debug

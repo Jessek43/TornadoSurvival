@@ -52,6 +52,11 @@ export class Game {
   // Rendering
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene: THREE.Scene;
+  /** Subtree holding every WORLD-TIED light (interior fixtures + pool,
+   *  flashlight, lightning strike light + its bolts/scorch). Detached from the
+   *  scene on teardown so a disposed world leaves NO lights behind — only the
+   *  durable atmosphere sun + hemisphere remain on the scene root. */
+  private readonly worldLights = new THREE.Group();
   private readonly camera: THREE.PerspectiveCamera;
 
   // Core
@@ -120,6 +125,9 @@ export class Game {
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
+    // World-tied lights live under this group (see field doc); the atmosphere
+    // sun/hemi go straight on the scene root and survive teardown.
+    this.scene.add(this.worldLights);
     this.camera = new THREE.PerspectiveCamera(
       GameConfig.camera.fov,
       window.innerWidth / window.innerHeight,
@@ -153,7 +161,7 @@ export class Game {
       this.debris,
     );
     this.interiorLights = new InteriorLights(
-      this.scene,
+      this.worldLights,
       hospital.lightFixtures,
       this.quality,
       this.noise,
@@ -173,7 +181,7 @@ export class Game {
     // enclosure (roof + windward wall). See StructureSystem.shelterExposureAt.
     this.player.setWindExposureQuery((pos, dir) => this.structures.shelterExposureAt(pos, dir));
     this.cameraRig = new CameraRig(this.camera, this.player, this.windField, this.noise);
-    this.flashlight = new Flashlight(this.scene);
+    this.flashlight = new Flashlight(this.worldLights);
     this.atmosphere = new Atmosphere(
       this.scene,
       this.camera,
@@ -193,7 +201,7 @@ export class Game {
     // (reusing the block-break + debris path), and clap thunder — gated to the
     // storm window. Constructed after its dependencies (atmosphere/audio/camera).
     this.lightning = new LightningSystem(
-      this.scene,
+      this.worldLights,
       this.tornado,
       this.structures,
       this.atmosphere,
@@ -316,6 +324,10 @@ export class Game {
     this.lightning.reset();
     this.cameraRig.reset();
     this.flashlight.reset();
+    // Re-attach the world lights and restore every fixture (un-strand the dead
+    // latch) so the rebuilt world is lit from its first-spawn baseline again.
+    this.scene.add(this.worldLights);
+    this.interiorLights.reset();
     this.player.sensitivity =
       GameConfig.player.mouseSensitivity * loadSettings().sensitivity;
 
@@ -340,6 +352,12 @@ export class Game {
     this.debris.reset();
     this.tornado.reset();
     this.lightning.reset();
+    // Detach every world-tied light so the menu holds NO lights but the durable
+    // atmosphere sun + hemisphere. Detach (not dispose): these systems are
+    // durable and re-shown identically each round, and none of them cast shadows
+    // (the only shadow-caster is the sun, which stays on the scene root), so
+    // there is no shadow map to free — a re-add restores them at zero cost.
+    this.scene.remove(this.worldLights);
     this.roundUI.hideWarning();
   }
 
