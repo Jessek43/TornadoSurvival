@@ -5,9 +5,10 @@
 // behind every assertion.
 // Run with: npm run verify:terrain   (or: npx tsx scripts/verify-terrain.ts)
 //
-// Assertions 4/5/9 are trivially satisfied at amplitude 0 (there is no relief) —
-// written anyway; they are the assertions that do the work in run two, when
-// GameConfig.terrain.amplitude flips and this script is re-read.
+// Assertions 4a/4b/5/9 are trivially satisfied at amplitude 0 (there is no relief)
+// — written anyway; they are the assertions that do the work in run two, when
+// GameConfig.terrain.amplitude flips and this script is re-read. 4a/4b split the
+// retired whole-grid `maxStep` into an apron STEP bound and a field SLOPE bound.
 import { Terrain, type Rect, type TerrainSpec } from "../src/level/Terrain";
 import { GameConfig } from "../src/config/GameConfig";
 import { buildNeighborhood, footprintXZ } from "../src/level/Neighborhood";
@@ -48,13 +49,17 @@ const buildingFootprints: Rect[] = [
   ...buildingSections.map(footprintXZ),
 ];
 
+// apronWidth is DERIVED (apronCells × cellSize) exactly as Game does it — the
+// apron/field split (assertions 4a/4b) leans on it being an integer of cells.
+const APRON_WIDTH = T.apronCells * T.cellSize;
 const spec: TerrainSpec = {
   size: SIZE,
   cellSize: T.cellSize,
   amplitude: T.amplitude,
+  wavelength: T.terrainWavelength,
   padY: T.padY,
   padMargin: T.padMargin,
-  apronWidth: T.apronWidth,
+  apronWidth: APRON_WIDTH,
   footprints: buildingFootprints,
   authoredPadRects: [],
 };
@@ -107,17 +112,75 @@ console.log(
   check(flat === cells, `hospital cells at padY: ${flat} / ${cells}`);
 }
 
-// --- 4. max per-cell height delta anywhere ≤ maxStep ------------------------
+// --- 4. de-conflated shape bounds: apron STEP (4a) vs field SLOPE (4b) -------
+// The single retired `maxStep` bounded the raw per-cell Δh over the WHOLE grid,
+// silently capping the field's gradient with a number written for the apron ramp.
+// It is now two: 4a bounds Δh inside the apron band (an authored ramp — a step
+// bound is right); 4b bounds slope on open-field cells (an emergent gradient — a
+// slope bound is right). A cell is FIELD only when BOTH its sample endpoints lie
+// ≥ apronWidth from every pad (the strict side: any cell touching the apron band
+// is checked by the tighter step bound, so no field cell is under-checked). Pad
+// interior cells (both endpoints inside a pad, Δh 0) are owned by assertions 1/3.
+//
+// distanceOutsideNearestPad replicated here (0 inside a pad) — Terrain keeps it
+// private; a 6-line copy avoids widening its API for two throwaway scripts.
+const distOutsidePad = (x: number, z: number): number => {
+  let best = Infinity;
+  for (const p of terrain.pads) {
+    const dx = Math.max(p.x0 - x, 0, x - p.x1);
+    const dz = Math.max(p.z0 - z, 0, z - p.z1);
+    best = Math.min(best, Math.hypot(dx, dz));
+  }
+  return best;
+};
+// A point is FIELD when it is off every pad AND ≥ apronWidth from all of them.
+const isFieldPoint = (x: number, z: number): boolean =>
+  !terrain.isPad(x, z) && distOutsidePad(x, z) >= APRON_WIDTH;
 {
-  let maxDelta = 0;
+  const RETIRED_STEP = 0.5; // the pre-split whole-grid Δh bound this replaces.
+  let apronCells = 0;
+  let apronOver = 0;
+  let fieldCells = 0;
+  let fieldOver = 0;
+  let newlyAccepted = 0; // cells the OLD bound rejected but the split accepts.
+  const visit = (ax: number, az: number, ah: number, bx: number, bz: number, bh: number): void => {
+    const dh = Math.abs(bh - ah);
+    const slope = dh / terrain.cellSize;
+    const aPad = terrain.isPad(ax, az);
+    const bPad = terrain.isPad(bx, bz);
+    const field = isFieldPoint(ax, az) && isFieldPoint(bx, bz);
+    const oldReject = dh > RETIRED_STEP + 1e-9;
+    let newAccept: boolean;
+    if (field) {
+      fieldCells++;
+      const over = slope > T.fieldMaxSlope + 1e-9;
+      if (over) fieldOver++;
+      newAccept = !over;
+    } else if (aPad && bPad) {
+      newAccept = dh <= 1e-9; // pad-interior cell: flat, owned by assertions 1/3.
+    } else {
+      apronCells++;
+      const over = dh > T.apronMaxStep + 1e-9;
+      if (over) apronOver++;
+      newAccept = !over;
+    }
+    if (oldReject && newAccept) newlyAccepted++;
+  };
   for (let iz = 0; iz < n; iz++) {
     for (let ix = 0; ix < n; ix++) {
+      const wx = gx(ix);
+      const wz = gx(iz);
       const h = terrain.samples[iz * n + ix];
-      if (ix + 1 < n) maxDelta = Math.max(maxDelta, Math.abs(terrain.samples[iz * n + ix + 1] - h));
-      if (iz + 1 < n) maxDelta = Math.max(maxDelta, Math.abs(terrain.samples[(iz + 1) * n + ix] - h));
+      if (ix + 1 < n) visit(wx, wz, h, gx(ix + 1), wz, terrain.samples[iz * n + ix + 1]);
+      if (iz + 1 < n) visit(wx, wz, h, wx, gx(iz + 1), terrain.samples[(iz + 1) * n + ix]);
     }
   }
-  check(maxDelta <= T.maxStep + 1e-9, `max Δh: ${maxDelta.toFixed(3)} m (limit ${T.maxStep})`);
+  check(apronOver === 0, `4a apron cells over step: ${apronOver} / ${apronCells} (limit ${T.apronMaxStep} m)`);
+  check(fieldOver === 0, `4b field cells over slope: ${fieldOver} / ${fieldCells} (limit ${T.fieldMaxSlope})`);
+  // The split must be at least as strict as the retired whole-grid bound: no cell
+  // it rejected may now pass. (Trivially 0 at amplitude 0; the proof that matters
+  // when relief turns on.)
+  check(newlyAccepted === 0, `cells newly accepted: ${newlyAccepted}`);
 }
 
 // --- 5. max slope inside PlayArea ≤ maxWalkable -----------------------------
@@ -189,8 +252,9 @@ console.log(
 
 // --- 9. perimeter wall base y has no gap along the ring ----------------------
 // The boundary walls are flat cuboids whose base Boundary sets to heightAt at
-// their centre; the treeline trunks likewise. A step > maxStep between adjacent
-// ring points would leave a gap under the flat wall. At amp 0 the ring is flat.
+// their centre; the treeline trunks likewise. A height jump between adjacent ring
+// points would leave a gap under the flat wall — a raw Δh (step) bound, so it uses
+// apronMaxStep (the retired maxStep's value, unchanged). At amp 0 the ring is flat.
 {
   const H = GameConfig.PLAY_AREA.halfExtent;
   const STEPS = 240;
@@ -204,7 +268,7 @@ console.log(
   }
   let gaps = 0;
   for (let i = 1; i < ring.length; i++) {
-    if (Math.abs(ring[i] - ring[i - 1]) > T.maxStep + 1e-9) gaps++;
+    if (Math.abs(ring[i] - ring[i - 1]) > T.apronMaxStep + 1e-9) gaps++;
   }
   check(gaps === 0, `wall base gaps: ${gaps} / ${ring.length}`);
 }
