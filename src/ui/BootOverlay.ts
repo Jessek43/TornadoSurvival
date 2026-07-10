@@ -70,16 +70,16 @@ export class BootOverlay {
       // just can't be CONTROLLED without a mouse + pointer lock. No apology, no
       // "coming soon", no email capture; the ask is to open it on a desktop.
       panel.append(
-        el("h1", "ts-boot-title", "Desktop only, for now"),
+        el("h1", "ts-boot-title", "Play this on a computer"),
         el(
           "p",
           "ts-boot-sub",
-          "Tornado Survival needs a mouse and keyboard — it uses pointer lock for mouse look, which this browser doesn't provide.",
+          "Tornado Survival is a mouse-and-keyboard game — it uses your mouse to look around, so it needs a laptop or desktop.",
         ),
         el(
           "p",
           "ts-boot-hint",
-          "Open it on a laptop or desktop in Chrome, Edge, Firefox, or Safari.",
+          "Open the same link on a computer in Chrome, Edge, Firefox, or Safari.",
         ),
       );
       return;
