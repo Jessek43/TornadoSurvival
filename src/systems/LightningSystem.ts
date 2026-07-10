@@ -99,6 +99,11 @@ export class LightningSystem {
     private readonly atmosphere: Atmosphere,
     private readonly audio: AudioSystem,
     private readonly cameraRig: CameraRig,
+    /** Ground height at (x,z): a GROUND strike lands here instead of at y = 0, and
+     *  its scorch disc lies on the substrate. strikeRaycastDown already tells
+     *  structure from ground (empty column → null), so this is only the ground
+     *  fallback height. No-op offset at amplitude 0. */
+    private readonly heightAt: (x: number, z: number) => number,
   ) {
     // Unlit + un-fogged + un-tone-mapped so the bolt stays a searing near-white
     // at any distance and blows past the bloom threshold (glows via the post
@@ -232,8 +237,8 @@ export class LightningSystem {
 
     const ground = !hit;
     const px = hit ? hit.point.x : this.tmpTarget.x;
-    const py = hit ? hit.point.y : 0;
     const pz = hit ? hit.point.z : this.tmpTarget.y;
+    const py = hit ? hit.point.y : this.heightAt(px, pz);
 
     this.spawnBolt(px, pz, py);
     this.atmosphere.triggerStrikeFlash(cfg.flashIntensity, cfg.flashDurationMs, this.flashColor);
@@ -400,7 +405,7 @@ export class LightningSystem {
   private addScorch(x: number, z: number): void {
     const slot = this.scorch[this.scorchNext];
     this.scorchNext = (this.scorchNext + 1) % this.scorch.length;
-    slot.mesh.position.set(x, 0.03, z);
+    slot.mesh.position.set(x, this.heightAt(x, z) + 0.03, z);
     slot.mesh.visible = true;
     slot.mat.opacity = 0.6;
     slot.ageMs = 0;

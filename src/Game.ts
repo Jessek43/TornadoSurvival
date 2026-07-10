@@ -261,6 +261,7 @@ export class Game {
       this.atmosphere,
       this.audio,
       this.cameraRig,
+      (x, z) => this.terrain.heightAt(x, z),
     );
     // Alarm: start/stop the siren ONCE per transition (edge-triggered), never
     // per frame. Desired state is decided in update()'s alarm block.
