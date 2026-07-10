@@ -140,6 +140,10 @@ Runtime behavior is verified **manually by Jesse in the browser**. Claude Code d
 - Every failure mode still gets a **concrete number** — an assertion Claude Code computes, or an on-screen readout Jesse reads. Never hand back "should be fixed" with no number behind it.
 - **Hard stop:** attempt the terminating checks **once**; if they fail, fix **once** and re-run **once**; then report and stop. **No looping on verification.**
 
+### `docs/STATE.md`
+
+The last commit of every run updates `docs/STATE.md` to describe the repo as it now stands. Move entries between `Confirmed` / `Unverified` / `Open` as the run's verification results dictate; add new `verify:*` scripts and `?debug` fields to their sections. An entry moves into `Confirmed` only when a terminating check asserts it with a printed count, or when a `?debug` field exposes it for manual confirmation — the evidence tag names which. Never add a hedge; never append history; never exceed 150 lines.
+
 ## Style
 
 - Comments explain **why**, not what — match the existing density (systems carry a header comment explaining their design and trade-offs). Keep that convention when adding a system.
