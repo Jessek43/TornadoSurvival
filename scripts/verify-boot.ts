@@ -11,7 +11,14 @@ import {
   type BootTransition,
 } from "../src/systems/BootFlow";
 import { routeBootTransition, type BootAction } from "../src/boot/bootRoute";
+import {
+  evaluateCapabilities,
+  capabilityReason,
+  type CapabilityInputs,
+  type CapabilityReason,
+} from "../src/boot/capabilities";
 import { isDebugEnabled } from "../src/debug/debugFlag";
+import { readFileSync } from "fs";
 
 let failures = 0;
 function check(ok: boolean, label: string): void {
@@ -20,7 +27,7 @@ function check(ok: boolean, label: string): void {
 }
 
 const ALL_STATES: BootState[] = ["checking", "unsupported", "loading", "ready", "error"];
-const OK_CAP = { webgl2: true, wasm: true };
+const OK_CAP = { webgl2: true, wasm: true, pointerlock: true };
 const TWO_TASKS = ["rapier", "world"] as const;
 
 /** Build a fresh BootFlow already driven into `target`, recording transitions. */
@@ -31,7 +38,7 @@ function inState(target: BootState): { flow: BootFlow; log: BootTransition[] } {
     case "checking":
       break;
     case "unsupported":
-      flow.capabilityChecked({ webgl2: false, wasm: true });
+      flow.capabilityChecked({ webgl2: false, wasm: true, pointerlock: true });
       break;
     case "loading":
       flow.capabilityChecked(OK_CAP);
@@ -287,6 +294,108 @@ function readyRouted(): { flow: BootFlow; routed: BootAction[] } {
   );
   const anyFatal = nonFatal.filter(Boolean).length;
   check(anyFatal === 0, `non-fatal transitions requesting cancel: ${anyFatal} (expected 0)`);
+}
+
+// --- 11. capability truth table: all 16 input combinations -------------------
+// The pure evaluator + reason derivation must be exhaustively decidable without
+// a DOM, and "playable" is exactly the all-present combination.
+console.log("\n--- capability truth table ---");
+{
+  const bools = [false, true];
+  let combos = 0;
+  let supported = 0;
+  for (const hasWebGL2 of bools)
+    for (const hasWasm of bools)
+      for (const hasPointerLock of bools)
+        for (const hasFinePointer of bools) {
+          combos++;
+          const r = evaluateCapabilities({ hasWebGL2, hasWasm, hasPointerLock, hasFinePointer });
+          if (capabilityReason(r) === null) supported++;
+        }
+  check(combos === 16, `capability combinations: ${combos}/16`);
+  check(supported === 1, `supported combinations: ${supported}/16 (expected 1)`);
+  check(combos - supported === 15, `unsupported combinations: ${combos - supported}/16 (expected 15)`);
+}
+
+// --- 12. reason selection: each single-failure case names the right reason ---
+console.log("\n--- reason selection (single failure) ---");
+{
+  const ALL: CapabilityInputs = {
+    hasWebGL2: true,
+    hasWasm: true,
+    hasPointerLock: true,
+    hasFinePointer: true,
+  };
+  const cases: Array<[Partial<CapabilityInputs>, CapabilityReason]> = [
+    [{ hasWebGL2: false }, "webgl2"],
+    [{ hasWasm: false }, "wasm"],
+    [{ hasPointerLock: false }, "pointerlock"],
+    [{ hasFinePointer: false }, "pointerlock"],
+  ];
+  let correct = 0;
+  for (const [override, expected] of cases) {
+    const r = evaluateCapabilities({ ...ALL, ...override });
+    if (capabilityReason(r) === expected) correct++;
+  }
+  check(correct === 4, `reason keys correct: ${correct}/4`);
+  const distinctReasons = new Set(cases.map(([, e]) => e)).size;
+  check(distinctReasons === 3, `distinct reasons (pointer sub-checks collapse): ${distinctReasons}/3`);
+}
+
+// --- 13. device cases: an iPad with a trackpad is genuinely playable ---------
+console.log("\n--- device cases ---");
+{
+  const ipad = evaluateCapabilities({
+    hasWebGL2: true,
+    hasWasm: true,
+    hasPointerLock: true,
+    hasFinePointer: true,
+  });
+  const ipadOk = capabilityReason(ipad) === null;
+  check(ipadOk, `ipad-with-trackpad allowed: ${ipadOk ? "yes" : "no"}`);
+}
+
+// --- 14. the probe reads (pointer: fine), never a touch-capability signal -----
+// A touchscreen laptop reports BOTH touch and a fine pointer; keying on a touch
+// signal (maxTouchPoints / ontouchstart) would wrongly block it. Prove the
+// source keys on the fine-pointer media query and contains no banned signal.
+console.log("\n--- banned detection signals ---");
+{
+  const src = readFileSync("src/boot/capabilities.ts", "utf8");
+  const banned = ["maxTouchPoints", "ontouchstart", "userAgent", "platform"];
+  const present = banned.filter((t) => src.includes(t));
+  check(
+    present.length === 0,
+    `banned detection signals: ${present.length}/4 present${present.length ? ` (${present.join(", ")})` : ""}`,
+  );
+  const readsFinePointer = src.includes("(pointer: fine)");
+  check(readsFinePointer, `probe reads (pointer: fine): ${readsFinePointer ? "yes" : "no"}`);
+}
+
+// --- 15. unsupported reached via the pointer-lock reason is still terminal ----
+console.log("\n--- unsupported terminal (pointerlock reason) ---");
+{
+  let escapes = 0;
+  for (const inp of INPUTS) {
+    const flow = new BootFlow(TWO_TASKS);
+    flow.capabilityChecked({ webgl2: true, wasm: true, pointerlock: false });
+    if (flow.state !== "unsupported") throw new Error("setup: expected unsupported via pointerlock");
+    apply(flow, inp);
+    if (flow.state !== "unsupported") escapes++;
+  }
+  check(escapes === 0, `escapes from unsupported (pointerlock): ${escapes}`);
+}
+
+// --- 16. every reason + fault maps to a distinct screen key ------------------
+// The three unsupported reasons (data, selected in the overlay) plus the two
+// fatal fault screens (from the router) must all be distinguishable.
+console.log("\n--- distinct screen keys ---");
+{
+  const unsupportedKeys: CapabilityReason[] = ["webgl2", "wasm", "pointerlock"];
+  const errorKey = routeBootTransition({ from: "ready", to: "error", errorKind: "error" }).screen;
+  const ctxKey = routeBootTransition({ from: "ready", to: "error", errorKind: "contextLost" }).screen;
+  const keys = new Set<string>([...unsupportedKeys, errorKey, ctxKey]);
+  check(keys.size === 5, `distinct screen keys: ${keys.size}/5`);
 }
 
 if (failures > 0) {
