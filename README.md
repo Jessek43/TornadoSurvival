@@ -26,7 +26,7 @@ npm run verify:boot      # static boot-flow (capability gate / loading gate / er
 npm run verify:boundary  # static map-boundary (PlayArea) invariants
 ```
 
-Requires a recent Node (18+) and a **WebGL2- and WebAssembly-capable** browser. On startup the game feature-tests both; a browser or device missing either gets a static "can't run this browser" screen instead of a black canvas, and the game never starts.
+Requires a recent Node (18+) and a **WebGL2- and WebAssembly-capable** browser on a machine with a **mouse** (mouse look uses pointer lock). On startup the game feature-tests all three; a browser or device missing any of them gets a static screen instead of a black canvas, and the game never starts.
 
 ## Controls
 
@@ -46,8 +46,9 @@ Bars in the corner show **Health** and **Grip** (stamina). Shelter inside the ho
 ## How it plays
 
 - A round opens with a **tornado warning** — run into the neighborhood and find shelter before the first pass.
-- The tornado makes **2–3 straight passes** separated by calm gaps. Each pass grazes one side of the map, so which side is safe is a gamble every pass.
+- The tornado makes **2–3 straight passes** separated by calm gaps. Each pass grazes one side of the map, so which side is safe is a gamble every pass. Some rounds spawn a **second funnel** on the same pass — two danger zones to read at once.
 - **Direct exposure is lethal** — sustained wind batters your health and a strong pass sweeps you off your feet (a ragdoll fling). Debris impacts and falls hurt too.
+- The map is a **bounded square** ringed by a treeline; stray toward the edge and a **"leaving the area — turn back"** warning appears (a wall stops you at the perimeter — nothing teleports you).
 - **Lightning** cracks down during a pass — bolts strike buildings near the funnel, flash the sky, and tear blocks off whatever they hit. The tornado siren wails during the warning and between passes but falls silent while a funnel is bearing down (and the instant the round ends).
 - Survive every pass to **win** (a "you survived" screen); die at any point and the round **ends** (a "you died" screen). Both offer **Play again / Retry** (an in-place restart, no reload) and **Main menu**. The loop: `menu → play → survived | died → restart / menu`.
 
@@ -55,7 +56,7 @@ Bars in the corner show **Health** and **Grip** (stamina). Shelter inside the ho
 
 Before the game itself runs, a small **boot state machine** guards the launch so a first-time visitor never gets a black screen:
 
-1. **Capability check** — feature-tests a real WebGL2 context and WebAssembly. If either is missing, a static fallback screen names what's absent and the game never starts (no renderer is executed).
+1. **Capability check** — feature-tests a real WebGL2 context, WebAssembly, and a mouse (pointer lock + a fine pointer). If any is missing, a static fallback screen names what's absent and the game never starts (no renderer is executed).
 2. **Loading gate** — a progress bar driven by the *actual* awaited work (Rapier's WASM init + the world build). It only reaches 100% when the menu is ready — it never fakes progress.
 3. **Error overlay** — the first uncaught error or promise rejection shows an overlay and **stops the render loop** (so it can't re-throw every frame); the original error is always logged to the console. With `?debug` the overlay shows the stack, otherwise a short message and a reload button. A lost WebGL context gets its own distinct message.
 
@@ -69,7 +70,8 @@ This is a separate machine from the in-game menu/round flow; see [`src/systems/B
 
 Dev-only flags for confirming the boot fallback screens in-browser (they inject at the boot state machine's inputs, adding no branch to the renderer or loop):
 
-- `?forceUnsupported=webgl` / `?forceUnsupported=wasm` — force the "can't run this browser" screen; the game never starts.
+- `?forceUnsupported=webgl` / `?forceUnsupported=wasm` / `?forceUnsupported=pointerlock` — force each unsupported-capability screen (the last is the "play on a computer" mouse-required message); the game never starts.
+- `?forceDesktop` — bypass the mouse/pointer-lock gate only (never WebGL2/WASM), so the game can be loaded on a touch device for testing.
 - `?forceError` — raise a synthetic error one second after the menu loads: the error overlay appears once and the render loop stops.
 - `?forceContextLost` — exercise the distinct "graphics context lost" message.
 
@@ -99,12 +101,16 @@ src/
 │   ├── hospital/           # per-floor interior: cell grid, authored floor plans,
 │   │                       #   walls + doors + fixtures, dept furnish, static invariants
 │   ├── Neighborhood.ts     # streets, houses, shops, trees
+│   ├── GroundTextures.ts   # UV asphalt/concrete paint for the flat ground planes
 │   └── Level.ts            # ground plane + street/lot paint
 ├── systems/
 │   ├── TornadoSystem.ts    # multi-pass lifecycle (spawn → travel → gap)
 │   ├── WindField.ts        # the Rankine-vortex wind field everything reads
 │   ├── StructureSystem.ts  # instanced destruction: wake / break / re-sleep
+│   ├── BlockTextures.ts    # triplanar world-space detail for instanced blocks
 │   ├── DebrisManager.ts    # pooled dynamic debris under a hard budget
+│   ├── PlayArea.ts         # pure map-edge geometry + edge-warning latch (the size dial)
+│   ├── Boundary.ts         # perimeter walls + treeline built from PlayArea (permanent)
 │   ├── PlayerController.ts # kinematic FPS + grip + ragdoll fling
 │   ├── DamageSystem.ts     # health / death
 │   ├── CameraRig.ts        # first-person + fling chase cam + shake
