@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import RAPIER from "@dimforge/rapier3d-compat";
 import type { Physics } from "../core/Physics";
+import type { Rect } from "../level/Terrain";
 import { PlayArea } from "./PlayArea";
 import { BOUNDARY_GROUPS } from "./CollisionGroups";
 
@@ -30,19 +31,41 @@ export class Boundary {
     private readonly parent: THREE.Object3D,
     private readonly physics: Physics,
     readonly playArea: PlayArea,
-    /** Ground height at (x,z) — the walls + treeline sit ON the substrate instead
+    /** Ground height at (x,z) — the treeline trunks sit ON the substrate instead
      *  of assuming y = 0. PlayArea stays pure (base 0); the offset is applied here,
      *  in the THREE/Rapier construction. At amplitude 0 it adds 0. */
     private readonly heightAt: (x: number, z: number) => number,
+    /** Minimum ground height over a rect — for SINKING the wall segments. A wall
+     *  is a long box spanning many cells; it cannot drape, so its base drops to
+     *  the footprint minimum and its top holds at a constant world y. At amp 0 it
+     *  returns 0 and the sink is a no-op. */
+    private readonly minHeightIn: (rect: Rect) => number,
   ) {
     // One fixed body carrying all four wall colliders. BOUNDARY_GROUPS filters
     // only the PLAYER bit, so these stop the kinematic capsule and are invisible
     // to the solver for debris/structures/ragdoll.
+    //
+    // SINK each segment: a wall spans the whole 300 m edge, so a single centre
+    // sample would float the box over the low stretches and leave a gap. Instead
+    // the base drops to the footprint MINIMUM (buried on every high stretch,
+    // flush on the lowest) and the box grows downward by the same amount so its
+    // TOP holds at its point-sampled height — wallHeight above the edge midpoint,
+    // unchanged. At amplitude 0 min == centre == 0, so grow is 0: the old flush
+    // placement exactly.
     const body = physics.world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
     for (const seg of playArea.wallSegments()) {
+      const footprint: Rect = {
+        x0: seg.center.x - seg.halfExtents.x,
+        x1: seg.center.x + seg.halfExtents.x,
+        z0: seg.center.z - seg.halfExtents.z,
+        z1: seg.center.z + seg.halfExtents.z,
+      };
+      const topY = seg.center.y + seg.halfExtents.y + this.heightAt(seg.center.x, seg.center.z);
+      const baseY = seg.center.y - seg.halfExtents.y + this.minHeightIn(footprint);
+      const halfY = (topY - baseY) / 2;
       const collider = physics.world.createCollider(
-        RAPIER.ColliderDesc.cuboid(seg.halfExtents.x, seg.halfExtents.y, seg.halfExtents.z)
-          .setTranslation(seg.center.x, seg.center.y + this.heightAt(seg.center.x, seg.center.z), seg.center.z)
+        RAPIER.ColliderDesc.cuboid(seg.halfExtents.x, halfY, seg.halfExtents.z)
+          .setTranslation(seg.center.x, baseY + halfY, seg.center.z)
           .setCollisionGroups(BOUNDARY_GROUPS),
         body,
       );

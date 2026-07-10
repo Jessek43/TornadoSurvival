@@ -201,8 +201,12 @@ export class Game {
     // once into the permanent group / shared Rapier world; never torn down. The
     // walls + treeline plant on the substrate via heightAt (PlayArea stays pure).
     this.playArea = new PlayArea(GameConfig.PLAY_AREA);
-    this.boundary = new Boundary(this.permanent, this.physics, this.playArea, (x, z) =>
-      this.terrain.heightAt(x, z),
+    this.boundary = new Boundary(
+      this.permanent,
+      this.physics,
+      this.playArea,
+      (x, z) => this.terrain.heightAt(x, z),
+      (rect) => this.terrain.minHeightIn(rect),
     );
     this.tornado = new TornadoSystem(this.noise);
     this.windField = new WindField(this.tornado, this.noise);

@@ -44,8 +44,12 @@ export class Level {
 
     // Parking-lot asphalt patch in front of the hospital entrance — the same
     // worn-asphalt texture as the streets, so the transition zone (exposed lot
-    // → sheltered building) reads as one continuous surface.
-    this.addPatch(scene, terrain, 0, 10, 58, 20, 0x1f2120, 0.02, "asphalt");
+    // → sheltered building) reads as one continuous surface. Tier 0.015 (was
+    // 0.02): it overlaps the 0.03 south sidewalk, and at fieldMaxSlope a 0.01 m
+    // +y gap is only 0.0099 m of NORMAL separation — a hair under the 0.01 m
+    // z-fight floor. Dropping the LOT (not raising the sidewalk, which would lift
+    // a visible kerb lip) widens the pair to 0.015 while keeping the lot lowest.
+    this.addPatch(scene, terrain, 0, 10, 58, 20, 0x1f2120, 0.015, "asphalt");
 
     // Streets + sidewalks (layout owned by Neighborhood.ts so the houses and
     // trees line up with the paint).
@@ -74,10 +78,19 @@ export class Level {
   }
 
   /**
-   * One flat ground-paint rectangle, floated slightly to avoid z-fighting.
-   * With a `surface`, it takes the tiled procedural asphalt/concrete texture
-   * (GroundTextures); without, it falls back to the old flat color (used for
-   * any untextured accent paint).
+   * One ground-paint rectangle, DRAPED onto the substrate. The quad is NOT a pad
+   * and is NOT snapped to the terrain grid — it keeps its exact (w, d) and is
+   * subdivided at a fixed `pavedSegment` step (segments = ceil(size / step)),
+   * then every vertex is lifted to `heightAt + tier`. Because `heightAt`
+   * interpolates the terrain's own triangles, a vertex sitting anywhere lands
+   * exactly on the ground and the paint runs parallel to it a constant `tier`
+   * above; the only residual is the chord error inside a sub-quad, held small by
+   * the ≤ cellSize/3 step (measured by verify:terrain). Same idiom as the ground
+   * mesh above (PlaneGeometry → bake the lay-flat rotation → displace verts). The
+   * UV path is untouched: PlaneGeometry keeps 0..1 UVs across the full plane
+   * regardless of segment count, so makeGroundMaterial's per-size repeat is
+   * unchanged. With a `surface` it takes the tiled asphalt/concrete texture;
+   * without, the old flat color (untextured accent paint).
    */
   private addPatch(
     scene: THREE.Scene,
@@ -87,19 +100,27 @@ export class Level {
     w: number,
     d: number,
     color: number,
-    y: number,
+    tier: number,
     surface?: GroundSurface,
   ): void {
     const material = surface
       ? makeGroundMaterial(surface, w, d)
       : new THREE.MeshStandardMaterial({ color, roughness: 1 });
-    const patch = new THREE.Mesh(new THREE.PlaneGeometry(w, d), material);
-    patch.rotation.x = -Math.PI / 2;
-    // The paint stays a flat plane (streets/sidewalks keep their UV path); it
-    // only MOVES in y — floated its original hair above the substrate at heightAt.
-    // (These lots/streets sit on pads or flat field; a single y is correct at
-    // amplitude 0 and stays close enough over the gentle field in run two.)
-    patch.position.set(x, terrain.heightAt(x, z) + y, z);
+    const step = GameConfig.terrain.pavedSegment;
+    const segX = Math.ceil(w / step);
+    const segZ = Math.ceil(d / step);
+    const geo = new THREE.PlaneGeometry(w, d, segX, segZ);
+    geo.rotateX(-Math.PI / 2); // bake the lay-flat so vertex coords are world-space (like the ground)
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      // Vertex world (x, z) = patch centre + its baked local offset; drape to the
+      // ground the terrain physically has, plus this surface's paint tier.
+      pos.setY(i, terrain.heightAt(x + pos.getX(i), z + pos.getZ(i)) + tier);
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals(); // smooth-shade the draped plane (the ground mesh is)
+    const patch = new THREE.Mesh(geo, material);
+    patch.position.set(x, 0, z); // y is baked into the vertices; only offset in XZ
     patch.receiveShadow = true;
     scene.add(patch);
   }

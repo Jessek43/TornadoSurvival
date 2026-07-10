@@ -271,10 +271,20 @@ export class DebugTools {
     const p = this.player.position;
     const h = this.terrain.heightAt(p.x, p.z);
     const feetY = this.player.capsuleBottomY;
+    // Field slope at the player's cell (rise/run over cellSize), as an angle so it
+    // reads against fieldMaxSlope 0.166 ≈ 9.5°. Sampled from heightAt one cell out
+    // in +x/+z, the same finite difference verify:terrain 4b bounds.
+    const cs = this.terrain.cellSize;
+    const sx = (this.terrain.heightAt(p.x + cs, p.z) - h) / cs;
+    const sz = (this.terrain.heightAt(p.x, p.z + cs) - h) / cs;
+    const slopeDeg = (Math.atan(Math.hypot(sx, sz)) * 180) / Math.PI;
     return (
       `§T terrain: ${this.terrain.rows}×${this.terrain.cols} @ ${this.terrain.cellSize}m` +
       ` · amp ${GameConfig.terrain.amplitude} · pads ${this.terrain.padCount}\n` +
+      // foot gap: capsule bottom minus heightAt. INDOORS this measures deck height
+      // above the pad, not a terrain gap (the player stands on a floor slab).
       `   heightAt(feet): ${h.toFixed(2)} · foot gap: ${(feetY - h).toFixed(2)}m` +
+      ` · slope at feet: ${slopeDeg.toFixed(1)}°` +
       ` · in pad: ${this.terrain.isPad(p.x, p.z) ? "yes" : "no"} · ground collider: heightfield`
     );
   }

@@ -19,20 +19,21 @@ export const GameConfig = {
   },
 
   // The ground substrate (level/Terrain.ts). ONE pure height function every
-  // ground consumer asks instead of assuming the plane y = 0. This run keeps
-  // `amplitude` and `padY` at 0, so heightAt returns 0 everywhere and the world
-  // is byte-identical to the flat plane — the heightfield mesh + Rapier
-  // heightfield collider are real, only their values are flat. Relief is a later
-  // run: raise `amplitude` and `padY` and the mesh/collider/consumers follow with
-  // no code change. All developer tuning (NOT user Settings).
+  // ground consumer asks instead of assuming the plane y = 0. Relief is now ON:
+  // amplitude 1.8 m over wavelength 60 m — six gentle swells across the map. The
+  // pair is read off docs/terrain-shape.md's sweep: at wave 60 the fieldMaxSlope
+  // cap allows 2.78 m, so 1.8 m keeps ~35% headroom (verify 4b does not sit on its
+  // limit). Paved surfaces DRAPE (subdivided planes lifted to heightAt), point
+  // things PLANT, extended rigid walls SINK to their footprint minimum. All
+  // developer tuning (NOT user Settings).
   terrain: {
     cellSize: 3, // m — 300 m ground ÷ 3 → 100×100 cells, 101×101 samples
-    amplitude: 0, // m of field relief — 0 THIS RUN (see the run note above)
+    amplitude: 1.8, // m of field relief — six swells; ~35% under the wave-60 cap
     // Characteristic period of the field undulation (m). The valueNoise frequency
     // is 1/terrainWavelength — this is the SECOND shape axis alongside amplitude:
     // amplitude alone does NOT set the gradient, wavelength does too (a big
     // amplitude at a long wavelength is still shallow). See docs/terrain-shape.md.
-    terrainWavelength: 16,
+    terrainWavelength: 60,
     padY: 0, // m — building-pad height; 0 keeps the world byte-identical to main
     padMargin: 3, // m — each building footprint dilates this far into a flat pad
     // Pad edge → open field ramp width, in GRID CELLS (× cellSize = 9 m). Specified
@@ -41,11 +42,27 @@ export const GameConfig = {
     // apronWidth is DERIVED (apronCells × cellSize) at every TerrainSpec build site,
     // so the two can never desync — same grid-lines discipline as the paved rects.
     apronCells: 3,
-    // The two shape bounds, DE-CONFLATED (they were one `maxStep`, which silently
-    // bounded the field's own gradient with an apron-ramp number):
-    apronMaxStep: 0.5, // m — per-cell Δh bound INSIDE the apron band (verify 4a).
+    // The two shape bounds, both RISE/RUN slopes. `apronMaxStep` was the third
+    // "slope in a step's clothing" mistype (after the retired whole-grid maxStep):
+    // a per-cell Δh of 0.5 over a 3 m cell is a slope of 0.166, so it silently
+    // pinned the apron to the field's gradient. An apron is a graded cut-and-fill
+    // bank around a building — it should be bounded by WALKABILITY, not tied to
+    // the field slope. So it is now a slope, set to maxWalkable: an apron may bank
+    // as steep as anything else the player can walk. At amplitude 1.8 the apron
+    // reads ~0.202 (11.4°) — a graded rim, correctly a touch steeper than the
+    // 0.166 field it transitions to. Invisible until relief made it bind.
+    apronMaxSlope: 0.6, // rise/run cap INSIDE the apron band (= maxWalkable) — verify 4a.
     fieldMaxSlope: 0.166, // rise/run cap on field cells off-pad & off-apron (verify 4b).
     maxWalkable: 0.6, // slope (rise/run) cap inside PlayArea (assertion 5 limit)
+    // Subdivision step (m) for the paved surfaces (streets/sidewalks/lot). The
+    // quads are NOT snapped to the terrain grid — instead each is subdivided at
+    // this fixed step (segments = ceil(size / pavedSegment), exact dimensions
+    // kept) and every vertex lifted to heightAt + its tier, so the paint conforms
+    // to the ground it interpolates. 0.5 m, after MEASUREMENT (verify:terrain):
+    // at 1.0 m the chord error inside a sub-quad hit 0.053 m (over the 0.005 m
+    // budget where a paved triangle chords across the steep pad→field apron);
+    // halved once to 0.5 m it drops to 0.0036 m (≤ budget). Stays ≤ cellSize/3.
+    pavedSegment: 0.5,
   },
 
   // The playable square — a hard, readable map edge (systems/PlayArea.ts + the

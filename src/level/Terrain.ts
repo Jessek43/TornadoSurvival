@@ -201,6 +201,75 @@ export class Terrain {
     return false;
   }
 
+  /** Minimum ground height over an axis-aligned rect — for SINKING an extended
+   *  rigid box (a perimeter wall) so its base drops below the ground everywhere
+   *  on its footprint (buried on the high side, flush on the low side, never a
+   *  gap). The min of the piecewise-linear (triangulated) surface over a rect is
+   *  attained at a VERTEX of the arrangement rect ∩ triangulation: an interior
+   *  grid point, a rect corner, or where a rect EDGE crosses a grid line OR a
+   *  cell diagonal. The last case is why "just grid points + corners" is not
+   *  enough for a THIN rect whose long edges cut across triangles (a wall
+   *  footprint) — the min can sit at a diagonal crossing on the edge. Enumerating
+   *  all four kinds is exact; over-sampling would only sink a box lower, which is
+   *  harmless. Pure in the rect. */
+  minHeightIn(rect: Rect): number {
+    const cs = this.cellSize;
+    const half = this.size / 2;
+    const n = this.cols + 1;
+    let min = Infinity;
+    const at = (x: number, z: number): void => {
+      min = Math.min(min, this.heightAt(x, z));
+    };
+    // Interior grid points (exact samples).
+    for (let iz = 0; iz < n; iz++) {
+      const wz = -half + iz * cs;
+      if (wz < rect.z0 || wz > rect.z1) continue;
+      for (let ix = 0; ix < n; ix++) {
+        const wx = -half + ix * cs;
+        if (wx < rect.x0 || wx > rect.x1) continue;
+        min = Math.min(min, this.samples[iz * n + ix]);
+      }
+    }
+    // The four edges, each sampled at its endpoints, its grid-line crossings, and
+    // its cell-diagonal crossings (the split is u+v = 1, mirroring heightAt).
+    this.minAlongEdge(rect.x0, rect.z0, rect.z1, true, at); // west edge  (x const)
+    this.minAlongEdge(rect.x1, rect.z0, rect.z1, true, at); // east edge
+    this.minAlongEdge(rect.z0, rect.x0, rect.x1, false, at); // south edge (z const)
+    this.minAlongEdge(rect.z1, rect.x0, rect.x1, false, at); // north edge
+    return min;
+  }
+
+  /** Sample heightAt at every piecewise-linear breakpoint along one rect edge —
+   *  endpoints, grid-line crossings, and the single cell-diagonal crossing per
+   *  cell — so `minHeightIn` never misses a min that lives between grid lines.
+   *  `fixedIsX` true: the edge is at x = `fixed`, running z from `a` to `b`;
+   *  false: at z = `fixed`, running x from `a` to `b`. `visit(x, z)` folds in. */
+  private minAlongEdge(
+    fixed: number,
+    a: number,
+    b: number,
+    fixedIsX: boolean,
+    visit: (x: number, z: number) => void,
+  ): void {
+    const cs = this.cellSize;
+    const half = this.size / 2;
+    const sample = (t: number): void => (fixedIsX ? visit(fixed, t) : visit(t, fixed));
+    sample(a);
+    sample(b);
+    // Grid-line crossings of the varying coordinate.
+    for (let k = Math.ceil((a + half) / cs); k <= Math.floor((b + half) / cs); k++) {
+      sample(k * cs - half);
+    }
+    // Diagonal crossings: the fixed coordinate sets the in-cell fraction `f`; the
+    // split u+v = 1 puts the diagonal at the varying fraction 1 − f in each cell.
+    const fr = (fixed + half) / cs;
+    const f = fr - Math.floor(fr); // in-cell fraction of the fixed axis
+    for (let iz = Math.floor((a + half) / cs); iz <= Math.floor((b + half) / cs); iz++) {
+      const t = (iz + 1 - f) * cs - half; // varying coord where u + v = 1
+      if (t > a && t < b) sample(t);
+    }
+  }
+
   /** Max slope (rise/run) among grid cells whose sample points fall in `rect` —
    *  for verify. Compares each interior sample to its +x and +z neighbours. */
   maxSlopeIn(rect: Rect): number {
