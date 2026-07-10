@@ -30,6 +30,10 @@ export class Boundary {
     private readonly parent: THREE.Object3D,
     private readonly physics: Physics,
     readonly playArea: PlayArea,
+    /** Ground height at (x,z) — the walls + treeline sit ON the substrate instead
+     *  of assuming y = 0. PlayArea stays pure (base 0); the offset is applied here,
+     *  in the THREE/Rapier construction. At amplitude 0 it adds 0. */
+    private readonly heightAt: (x: number, z: number) => number,
   ) {
     // One fixed body carrying all four wall colliders. BOUNDARY_GROUPS filters
     // only the PLAYER bit, so these stop the kinematic capsule and are invisible
@@ -38,7 +42,7 @@ export class Boundary {
     for (const seg of playArea.wallSegments()) {
       const collider = physics.world.createCollider(
         RAPIER.ColliderDesc.cuboid(seg.halfExtents.x, seg.halfExtents.y, seg.halfExtents.z)
-          .setTranslation(seg.center.x, seg.center.y, seg.center.z)
+          .setTranslation(seg.center.x, seg.center.y + this.heightAt(seg.center.x, seg.center.z), seg.center.z)
           .setCollisionGroups(BOUNDARY_GROUPS),
         body,
       );
@@ -82,13 +86,14 @@ export class Boundary {
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i];
       const scale = s.scale;
+      const gy = this.heightAt(s.x, s.z); // plant on the substrate, not at y = 0
       quat.setFromEuler(euler.set(0, s.rotationY, 0));
       scl.set(scale, scale, scale);
       // Trunk: geo is centred, so lift its centre to (height/2)*scale to sit on ground.
-      mat4.compose(pos.set(s.x, 1.5 * scale, s.z), quat, scl);
+      mat4.compose(pos.set(s.x, gy + 1.5 * scale, s.z), quat, scl);
       trunks.setMatrixAt(i, mat4);
       // Canopy: base meets the trunk top (3*scale); cone centre is base + 5.5/2.
-      mat4.compose(pos.set(s.x, 5.75 * scale, s.z), quat, scl);
+      mat4.compose(pos.set(s.x, gy + 5.75 * scale, s.z), quat, scl);
       canopies.setMatrixAt(i, mat4);
       // Deterministic per-tree shade jitter so the row doesn't read as one clone.
       const j = 0.85 + 0.3 * (((i * 2654435761) >>> 0) % 1000) / 1000;

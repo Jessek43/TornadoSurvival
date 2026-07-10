@@ -212,6 +212,29 @@ export function worldPadFootprints(sections: SectionSpec[]): Rect[] {
   ];
 }
 
+/**
+ * Rigidly lift every section onto the substrate: shift a section's blocks (and
+ * climb volumes) in y by heightAt at its footprint centre, so a building sits on
+ * its pad and a tree plants on the field. A RIGID per-section shift preserves all
+ * internal geometry (stairs, decks, the hospital z-fight lift table) — buildings
+ * sit on flat pads (footprint uniformly padY), so the centre sample is the whole
+ * building's ground height. Mutates the specs once, before StructureSystem reads
+ * them (rebuild() then reuses the lifted specs). At amplitude 0 / padY 0 every
+ * shift is 0 — a no-op that proves the code path.
+ */
+export function liftSectionsToTerrain(
+  sections: SectionSpec[],
+  heightAt: (x: number, z: number) => number,
+): void {
+  for (const s of sections) {
+    const f = footprintXZ(s);
+    const dy = heightAt((f.x0 + f.x1) / 2, (f.z0 + f.z1) / 2);
+    if (dy === 0) continue;
+    for (const b of s.blocks) b.position[1] += dy;
+    if (s.climbVolumes) for (const c of s.climbVolumes) c.position[1] += dy;
+  }
+}
+
 /** Count connected components among overlapping rects (union-find). Overlap is
  *  inclusive, matching isPad, so touching pads merge. */
 function countComponents(rects: Rect[]): number {

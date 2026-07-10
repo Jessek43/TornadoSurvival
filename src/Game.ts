@@ -7,7 +7,7 @@ import { Physics } from "./core/Physics";
 import { Level } from "./level/Level";
 import { buildHospital } from "./level/Hospital";
 import { buildNeighborhood } from "./level/Neighborhood";
-import { Terrain, worldPadFootprints } from "./level/Terrain";
+import { Terrain, worldPadFootprints, liftSectionsToTerrain } from "./level/Terrain";
 import { Atmosphere } from "./systems/Atmosphere";
 import { AudioSystem } from "./systems/AudioSystem";
 import { CameraRig } from "./systems/CameraRig";
@@ -185,10 +185,23 @@ export class Game {
       authoredPadRects: [],
     });
     this.level = new Level(this.scene, this.physics, this.terrain);
+
+    // Sit every section ON the substrate (buildings on their pad, trees on the
+    // field) and lift the hospital's ceiling fixtures with the building they hang
+    // in. Rigid per-section / whole-hospital shifts — no internal geometry moves.
+    // Done here (not in the hospital generator, which stays terrain-ignorant) and
+    // once, before StructureSystem/InteriorLights read the specs. No-op at amp 0.
+    liftSectionsToTerrain(sections, (x, z) => this.terrain.heightAt(x, z));
+    const hospitalY = this.terrain.heightAt(GameConfig.hospitalCenter.x, GameConfig.hospitalCenter.z);
+    for (const f of hospital.lightFixtures) f[1] += hospitalY;
+
     // The map edge: pure geometry + the static boundary walls + treeline. Built
-    // once into the permanent group / shared Rapier world; never torn down.
+    // once into the permanent group / shared Rapier world; never torn down. The
+    // walls + treeline plant on the substrate via heightAt (PlayArea stays pure).
     this.playArea = new PlayArea(GameConfig.PLAY_AREA);
-    this.boundary = new Boundary(this.permanent, this.physics, this.playArea);
+    this.boundary = new Boundary(this.permanent, this.physics, this.playArea, (x, z) =>
+      this.terrain.heightAt(x, z),
+    );
     this.tornado = new TornadoSystem(this.noise);
     this.windField = new WindField(this.tornado, this.noise);
     this.funnelVisual = new FunnelVisual(this.scene, this.tornado, this.quality);
