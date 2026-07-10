@@ -32,10 +32,16 @@ export type BootState = "checking" | "unsupported" | "loading" | "ready" | "erro
  *  not a thrown error, and must read differently to the player). */
 export type BootErrorKind = "error" | "contextLost";
 
-/** Result of the pre-flight capability probe (WebGL2 + WebAssembly). */
+/** Result of the pre-flight capability probe (WebGL2 + WebAssembly + a
+ *  desktop-class pointer). Each field is a distinct capability; the WHY behind a
+ *  failure (which reason screen to show) is derived from this struct in the
+ *  wiring, not stored as a BootFlow state — a reason is data, not a state. */
 export interface CapabilityResult {
   webgl2: boolean;
   wasm: boolean;
+  /** Pointer Lock + a fine pointer both present — i.e. the game is genuinely
+   *  playable (mouse look + real cursor). Absent on a touch-only phone. */
+  pointerlock: boolean;
 }
 
 /** One emitted transition. `errorKind` is set only when `to === "error"`. */
@@ -92,13 +98,13 @@ export class BootFlow {
   }
 
   /**
-   * Pre-flight result. Legal only from `checking`: both capabilities present →
+   * Pre-flight result. Legal only from `checking`: all capabilities present →
    * `loading` (or straight to `ready` if the task list is empty); anything
    * missing → `unsupported` (terminal). Ignored in any other state.
    */
   capabilityChecked(result: CapabilityResult): void {
     if (this.current !== "checking") return;
-    if (result.webgl2 && result.wasm) {
+    if (result.webgl2 && result.wasm && result.pointerlock) {
       this.emit("loading");
       // A degenerate empty task list is already "done" — resolve immediately so
       // the machine never wedges in `loading`.
