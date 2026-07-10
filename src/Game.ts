@@ -7,6 +7,7 @@ import { Physics } from "./core/Physics";
 import { Level } from "./level/Level";
 import { buildHospital } from "./level/Hospital";
 import { buildNeighborhood } from "./level/Neighborhood";
+import { Terrain, worldPadFootprints } from "./level/Terrain";
 import { Atmosphere } from "./systems/Atmosphere";
 import { AudioSystem } from "./systems/AudioSystem";
 import { CameraRig } from "./systems/CameraRig";
@@ -73,6 +74,10 @@ export class Game {
   private time = 0;
 
   // World & systems (public so debug tooling can poke at them)
+  /** The ground substrate: ONE pure height function. Built once from the placed
+   *  building footprints; the mesh, collider, boundary, lightning + section lift
+   *  all ask it instead of assuming y = 0. */
+  readonly terrain: Terrain;
   readonly level: Level;
   readonly windField: WindField;
   readonly tornado: TornadoSystem;
@@ -153,7 +158,33 @@ export class Game {
     this.physics = new Physics();
     this.input = new InputManager(this.renderer.domElement);
 
-    this.level = new Level(this.scene, this.physics);
+    // Build the destructible SECTIONS first (pure data): the ground substrate
+    // derives its building pads from their footprints, so it must exist before
+    // Level (the mesh + heightfield collider) or anything else reads heightAt.
+    // ?bare = Phase-1 structural shell only (the perf-gate measurement mode).
+    const hospital = buildHospital({
+      detail: !new URLSearchParams(location.search).has("bare"),
+    });
+    // Neighborhood sections (houses, shops, trees) are appended AFTER the
+    // hospital's: fixture→section ownership indices point into the hospital
+    // range, so the hospital must come first.
+    const sections = [...hospital.sections, ...buildNeighborhood()];
+
+    // The ground substrate — ONE pure height function. Pads sit under every
+    // placed building (worldPadFootprints); the field is flat elsewhere. The
+    // mesh + Rapier heightfield collider (Level), the boundary, the lightning
+    // ground strikes and the per-section lift all ask this instead of assuming 0.
+    this.terrain = new Terrain({
+      size: GameConfig.world.groundSize,
+      cellSize: GameConfig.terrain.cellSize,
+      amplitude: GameConfig.terrain.amplitude,
+      padY: GameConfig.terrain.padY,
+      padMargin: GameConfig.terrain.padMargin,
+      apronWidth: GameConfig.terrain.apronWidth,
+      footprints: worldPadFootprints(sections),
+      authoredPadRects: [],
+    });
+    this.level = new Level(this.scene, this.physics, this.terrain);
     // The map edge: pure geometry + the static boundary walls + treeline. Built
     // once into the permanent group / shared Rapier world; never torn down.
     this.playArea = new PlayArea(GameConfig.PLAY_AREA);
@@ -162,15 +193,6 @@ export class Game {
     this.windField = new WindField(this.tornado, this.noise);
     this.funnelVisual = new FunnelVisual(this.scene, this.tornado, this.quality);
     this.debris = new DebrisManager(this.scene, this.physics, this.quality);
-    // ?bare = Phase-1 structural shell only (the perf-gate measurement mode);
-    // the default requests full detailing once the Phase-2 furnish pass lands.
-    const hospital = buildHospital({
-      detail: !new URLSearchParams(location.search).has("bare"),
-    });
-    // Neighborhood sections (houses, shops, trees) are appended AFTER the
-    // hospital's: fixture→section ownership indices point into the hospital
-    // range, so the hospital must come first.
-    const sections = [...hospital.sections, ...buildNeighborhood()];
     this.structures = new StructureSystem(
       this.scene,
       this.physics,

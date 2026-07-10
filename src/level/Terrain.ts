@@ -22,6 +22,10 @@
  * Trees are NOT pads (buildings-only); they plant at field height.
  */
 
+import { footprintXZ } from "./Neighborhood";
+import { HOSPITAL_PARAMS } from "./hospital/params";
+import type { SectionSpec } from "./Blueprints";
+
 export interface Rect {
   x0: number;
   x1: number;
@@ -186,6 +190,26 @@ export class Terrain {
     }
     return best;
   }
+}
+
+/**
+ * The pad footprints for THIS game world — the one binding between the generic
+ * Terrain class above and the specific level. ONE source of truth shared by the
+ * world build (Game) and verify:terrain, so they can never disagree:
+ *
+ *   the hospital params ENVELOPE (one gap-free interior pad) + every PLACED
+ *   building section's footprint (so a car / ambulance / canopy that reaches
+ *   past the envelope still sits on flat ground).
+ *
+ * Trees are excluded — they are field-planted by design (see the file header).
+ * `sections` is the full world section list (hospital first, then neighborhood).
+ */
+export function worldPadFootprints(sections: SectionSpec[]): Rect[] {
+  const hf = HOSPITAL_PARAMS.footprint;
+  return [
+    { x0: hf.xMin, x1: hf.xMax, z0: hf.zMin, z1: hf.zMax },
+    ...sections.filter((s) => s.name !== "tree").map(footprintXZ),
+  ];
 }
 
 /** Count connected components among overlapping rects (union-find). Overlap is
