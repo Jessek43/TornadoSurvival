@@ -178,9 +178,11 @@ export class Game {
       size: GameConfig.world.groundSize,
       cellSize: GameConfig.terrain.cellSize,
       amplitude: GameConfig.terrain.amplitude,
+      wavelength: GameConfig.terrain.terrainWavelength,
       padY: GameConfig.terrain.padY,
       padMargin: GameConfig.terrain.padMargin,
-      apronWidth: GameConfig.terrain.apronWidth,
+      // Derived here (never stored) so apronWidth is always an integer of cells.
+      apronWidth: GameConfig.terrain.apronCells * GameConfig.terrain.cellSize,
       footprints: worldPadFootprints(sections),
       authoredPadRects: [],
     });

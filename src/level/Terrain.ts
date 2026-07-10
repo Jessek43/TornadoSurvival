@@ -40,6 +40,9 @@ export interface TerrainSpec {
   cellSize: number;
   /** Field relief amplitude (m). 0 → flat field at padY. */
   amplitude: number;
+  /** Characteristic period of the field undulation (m); the valueNoise spatial
+   *  frequency is 1/wavelength. The second shape axis alongside amplitude. */
+  wavelength: number;
   /** Flat building-pad height (m). */
   padY: number;
   /** Dilation (m) applied to every footprint before it becomes a pad, so no
@@ -67,10 +70,10 @@ function hash2(ix: number, iz: number): number {
   return (h >>> 0) / 4294967296;
 }
 
-/** Smooth value noise in [-1,1] on a 1/16 m grid. Only scaled into the field
- *  height when `amplitude > 0`, but kept here so run two is a one-constant flip. */
-function valueNoise(x: number, z: number): number {
-  const s = 0.0625; // spatial frequency of the field undulation
+/** Smooth value noise in [-1,1]; `s` is the spatial frequency (= 1/wavelength),
+ *  so the undulation lattice is `1/s` m across. Only scaled into the field height
+ *  when `amplitude > 0`, but kept here so run two is a one-constant flip. */
+function valueNoise(x: number, z: number, s: number): number {
   const fx = x * s;
   const fz = z * s;
   const ix = Math.floor(fx);
@@ -104,6 +107,8 @@ export class Terrain {
   private readonly amplitude: number;
   private readonly padY: number;
   private readonly apronWidth: number;
+  /** valueNoise spatial frequency = 1/wavelength. */
+  private readonly frequency: number;
 
   constructor(spec: TerrainSpec) {
     this.size = spec.size;
@@ -111,6 +116,7 @@ export class Terrain {
     this.amplitude = spec.amplitude;
     this.padY = spec.padY;
     this.apronWidth = spec.apronWidth;
+    this.frequency = 1 / spec.wavelength;
 
     // Pads: each footprint dilated by padMargin, plus any authored rects.
     const m = spec.padMargin;
@@ -138,7 +144,7 @@ export class Terrain {
   /** THE height function. Pure in (x, z) — there is deliberately no y parameter. */
   heightAt(x: number, z: number): number {
     if (this.isPad(x, z)) return this.padY;
-    const field = this.padY + this.amplitude * valueNoise(x, z);
+    const field = this.padY + this.amplitude * valueNoise(x, z, this.frequency);
     const d = this.distanceOutsideNearestPad(x, z);
     if (d < this.apronWidth) {
       return this.padY + (field - this.padY) * smooth(d / this.apronWidth);

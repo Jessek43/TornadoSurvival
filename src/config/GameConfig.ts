@@ -28,10 +28,23 @@ export const GameConfig = {
   terrain: {
     cellSize: 3, // m — 300 m ground ÷ 3 → 100×100 cells, 101×101 samples
     amplitude: 0, // m of field relief — 0 THIS RUN (see the run note above)
+    // Characteristic period of the field undulation (m). The valueNoise frequency
+    // is 1/terrainWavelength — this is the SECOND shape axis alongside amplitude:
+    // amplitude alone does NOT set the gradient, wavelength does too (a big
+    // amplitude at a long wavelength is still shallow). See docs/terrain-shape.md.
+    terrainWavelength: 16,
     padY: 0, // m — building-pad height; 0 keeps the world byte-identical to main
     padMargin: 3, // m — each building footprint dilates this far into a flat pad
-    apronWidth: 8, // m — pad edge → open field ramp band (degenerate at amp 0)
-    maxStep: 0.5, // m — apron per-cell Δh bound (verify:terrain assertion 4 limit)
+    // Pad edge → open field ramp width, in GRID CELLS (× cellSize = 9 m). Specified
+    // in cells, not metres, because its ONLY required property is cell-alignment:
+    // the apron/field split (verify:terrain 4a vs 4b) must fall on a cell boundary.
+    // apronWidth is DERIVED (apronCells × cellSize) at every TerrainSpec build site,
+    // so the two can never desync — same grid-lines discipline as the paved rects.
+    apronCells: 3,
+    // The two shape bounds, DE-CONFLATED (they were one `maxStep`, which silently
+    // bounded the field's own gradient with an apron-ramp number):
+    apronMaxStep: 0.5, // m — per-cell Δh bound INSIDE the apron band (verify 4a).
+    fieldMaxSlope: 0.166, // rise/run cap on field cells off-pad & off-apron (verify 4b).
     maxWalkable: 0.6, // slope (rise/run) cap inside PlayArea (assertion 5 limit)
   },
 
