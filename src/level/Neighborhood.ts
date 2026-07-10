@@ -341,7 +341,7 @@ function buildTree(cx: number, cz: number, scale: number): SectionSpec {
 // Keeping trees clear of buildings
 // ---------------------------------------------------------------------------
 
-interface Footprint {
+export interface Footprint {
   x0: number;
   x1: number;
   z0: number;
@@ -349,8 +349,10 @@ interface Footprint {
 }
 
 /** XZ bounding box of a section's blocks — the widest extent, so a tree's box
- *  is its canopy and a house's is its roof eave / porch, not just the walls. */
-function footprintXZ(spec: SectionSpec): Footprint {
+ *  is its canopy and a house's is its roof eave / porch, not just the walls.
+ *  Exported so the world build (Game) + verify:terrain can derive the pad mask
+ *  and per-section ground lift from the same footprints the tree-nudge uses. */
+export function footprintXZ(spec: SectionSpec): Footprint {
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
   for (const b of spec.blocks) {
     const hw = b.size[0] / 2;
