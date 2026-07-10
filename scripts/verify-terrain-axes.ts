@@ -2,9 +2,11 @@
 // Terrain.heightAt about WHERE each height goes? Terrain holds a row-major grid
 // samples[iz·n+ix] (ix→+x, iz→+z); Rapier reads `heights` column-major and applies
 // its own row/col→world-axis convention (compiled into the parry3d WASM, not
-// readable in node_modules). For a square grid the flat indices coincide
-// NUMERICALLY, but if the axis SEMANTICS are swapped, every off-diagonal height
-// lands transposed. This script reads that convention EMPIRICALLY.
+// readable in node_modules), a NET x↔z transpose of the samples grid. `Level` and
+// this check both feed the collider through `heightfieldBuffer`, which transposes
+// samples to cancel it — so the collider surface equals heightAt(x, z). This
+// script reads that convention EMPIRICALLY and guards the buffer against regression
+// (drop the transpose and it goes red at 50/50 again).
 //
 // This is a UNIT check, NOT a headless game run: no Game import, no render loop,
 // no dev server, and NO stepping. It constructs ONE heightfield collider in a
@@ -22,7 +24,7 @@
 //
 // Run with: npm run verify:axes   (or: npx tsx scripts/verify-terrain-axes.ts)
 import RAPIER from "@dimforge/rapier3d-compat";
-import { Terrain, type TerrainSpec } from "../src/level/Terrain";
+import { Terrain, heightfieldBuffer, type TerrainSpec } from "../src/level/Terrain";
 
 const SIZE = 8; // square domain [-4, 4]
 const CELL = 1; // 8 cells/side → a 9×9 node grid
@@ -75,10 +77,12 @@ for (let iz = 0; iz < n; iz++) {
 }
 
 // --- build ONE heightfield collider, exactly as Level.ts does ----------------
+// Through the SAME `heightfieldBuffer` transpose the game uses — so this proves the
+// production collider, not a hand-rolled one.
 const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
 const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
 const collider = world.createCollider(
-  RAPIER.ColliderDesc.heightfield(terrain.rows, terrain.cols, terrain.samples, {
+  RAPIER.ColliderDesc.heightfield(terrain.rows, terrain.cols, heightfieldBuffer(terrain.samples, n), {
     x: SIZE,
     y: 1,
     z: SIZE,
@@ -113,17 +117,15 @@ for (let i = 0; i < RAY_COUNT; i++) {
 
 check(missed === 0, `rays missed: ${missed} / ${RAY_COUNT}`);
 check(mismatches === 0, `axis mismatches: ${mismatches} / ${RAY_COUNT}  (worst |Δy| ${worst.toFixed(4)} m, tol ${TOL})`);
-// Diagnosis: if the mismatching rays all agree with heightAt(z, x), the collider
-// indexes the grid TRANSPOSED vs Terrain/the mesh — a clean x↔z axis swap. This
-// says WHERE the fix belongs (Level.ts heightfield construction), not that heightAt
-// is wrong; heightAt matches the mesh (verify:terrain meshGap 0).
+// Diagnosis: with the transpose cancelled this is 0. If it ever climbs back to
+// RAY_COUNT while axis mismatches also does, the `heightfieldBuffer` transpose was
+// dropped and the collider is x↔z swapped again — the exact regression this guards.
 console.log(`      diagnosis — rays matching heightAt(z, x) [transpose]: ${transposeAgree} / ${RAY_COUNT}`);
 
 if (failures > 0) {
   // A non-zero mismatch count means the Rapier heightfield and heightAt disagree
-  // about the axes. Per the run spec this is NOT fixed here (heightAt is the pure
-  // module; a collider-construction fix belongs in Level.ts as its own change) —
-  // it is reported.
+  // about the axes — the collider is a diagonal mirror of the mesh. The fix lives
+  // in `heightfieldBuffer` (Terrain), shared by Level and this check.
   throw new Error(`${failures} axis invariant violation(s) — Rapier heightfield vs heightAt disagree`);
 }
 console.log("\nOK — Rapier heightfield agrees with heightAt on an asymmetric grid");

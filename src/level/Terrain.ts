@@ -238,6 +238,29 @@ export class Terrain {
 }
 
 /**
+ * Transpose the row-major sample grid into the buffer the Rapier heightfield
+ * wants. `samples` is row-major samples[iz·n + ix] (ix→+x, iz→+z); parry3d's
+ * heightfield reads `heights` column-major and maps its rows→z / cols→x, and the
+ * NET effect (empirically read by verify:axes) is that a collider built from
+ * `samples` directly evaluates heightAt(z, x) at world (x, z) — a clean x↔z
+ * transpose, invisible on a flat grid but a diagonal-mirrored collider once relief
+ * turns on. Feeding this transposed buffer (out[a·n + b] = samples[b·n + a]) makes
+ * the collider surface equal heightAt(x, z) to the bit. ONE seam shared by Level
+ * (the real collider) and verify:axes (the check), so they can never disagree.
+ * Pure array math — no THREE, no Rapier — so the headless verify keeps importing it.
+ * Square grid only (Terrain guarantees rows === cols); n = grid points per side.
+ */
+export function heightfieldBuffer(samples: Float32Array, n: number): Float32Array {
+  const out = new Float32Array(n * n);
+  for (let a = 0; a < n; a++) {
+    for (let b = 0; b < n; b++) {
+      out[a * n + b] = samples[b * n + a];
+    }
+  }
+  return out;
+}
+
+/**
  * The pad footprints for THIS game world — the one binding between the generic
  * Terrain class above and the specific level. ONE source of truth shared by the
  * world build (Game) and verify:terrain, so they can never disagree:

@@ -3,7 +3,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { GameConfig } from "../config/GameConfig";
 import type { Physics } from "../core/Physics";
 import { STREET_PATCHES } from "./Neighborhood";
-import type { Terrain } from "./Terrain";
+import { heightfieldBuffer, type Terrain } from "./Terrain";
 import { makeGroundMaterial, type GroundSurface } from "./GroundTextures";
 
 /**
@@ -54,14 +54,17 @@ export class Level {
     }
 
     // Physical ground — a Rapier heightfield sampling the SAME grid as the mesh.
-    // heights are column-major over local (x, z); Terrain.samples is row-major
-    // samples[iz·(cols+1)+ix] with ix→x, iz→z. For a square grid the two linear
-    // indices coincide (ix + iz·N == iz·N + ix), so samples maps 1:1 to Rapier's
-    // rows→x / cols→z layout — pass it directly. scale.y = 1 (heights already in
-    // metres); at amplitude 0 the surface sits at y = 0, as the old cuboid top did.
+    // Rapier reads `heights` column-major and maps rows→z / cols→x, the transpose
+    // of Terrain's row-major samples[iz·(cols+1)+ix] (ix→x, iz→z): a collider built
+    // from samples directly lands every off-diagonal height at world (z, x) — a
+    // clean x↔z swap (invisible on the flat amplitude-0 grid, a diagonal-mirrored
+    // collider once relief turns on; proven by verify:axes). `heightfieldBuffer`
+    // transposes it so the surface equals heightAt(x, z). scale.y = 1 (heights
+    // already in metres); at amplitude 0 the surface sits at y = 0, as before.
+    const heights = heightfieldBuffer(terrain.samples, terrain.cols + 1);
     const body = physics.world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
     physics.world.createCollider(
-      RAPIER.ColliderDesc.heightfield(terrain.rows, terrain.cols, terrain.samples, {
+      RAPIER.ColliderDesc.heightfield(terrain.rows, terrain.cols, heights, {
         x: size,
         y: 1,
         z: size,
