@@ -58,7 +58,7 @@ Rules for this file (see CLAUDE.md § docs/STATE.md for the obligation to keep i
 - Terrain.heightAt is total (0/10201 non-finite) and deterministic (0 mismatches, two builds). `verify:terrain`
 - Every building section footprint lies inside a pad (0/65 outside); 43 trees field-planted. `verify:terrain`
 - Pad, hospital-footprint and on-pad-boundary samples are exactly padY (inclusive, stable). `verify:terrain`
-- At amplitude 0 all 10201 samples are padY; max Δh 0 m and 0 PlayArea cells over slope. `verify:terrain`
+- At amplitude 0 all 10201 samples are padY; 4a apron step 0/1952, 4b field slope 0/16653, 0 newly accepted. `verify:terrain`
 - Ground is a subdivided height mesh + Rapier heightfield collider over one shared grid. `?debug §T`
 - Live heightAt/foot gap + in-pad flag show the heightfield holds the player up. `?debug §T`
 
@@ -80,7 +80,8 @@ Rules for this file (see CLAUDE.md § docs/STATE.md for the obligation to keep i
 | `verify:lightning` | strike cap vs debris budget, alarm edges | LightningConfig dump, starts/stops (2/2, 1/1) |
 | `verify:boundary` | wall coverage, containment, warn latch, scaling | 360/360, 10000/10000, 2 transitions |
 | `verify:hospital` | coplanar/support/reachability/enclosure/circulation | overlaps 0, unsupported 0, choked 0, rooms/floor |
-| `verify:terrain` | heightAt totality/determinism, pad flatness, building-on-pad, Δh/slope, boundary stability | 10201 samples, 0/65 outside, max Δh 0, flat 10201/10201 |
+| `verify:terrain` | heightAt totality/determinism, pad flatness, building-on-pad, apron step (4a) vs field slope (4b), boundary stability | 10201 samples, 0/65 outside, 4a 0/1952, 4b 0/16653, flat 10201/10201 |
+| `sweep:terrain` | **measurement, asserts nothing** — prices field relief over amplitude × wavelength | table of field/paved slope, main-street relief, meshGap; max amp per wavelength |
 
 ## Debug readout
 
@@ -108,7 +109,7 @@ Rules for this file (see CLAUDE.md § docs/STATE.md for the obligation to keep i
 
 ## Open
 
-- Paved quads meet relief per docs/paved-surfaces-diagnosis.md (Path A: vertices to the mesh surface + tier) — not yet built; amplitude stays 0 until it is.
+- Paved quads meet relief (Path A: vertices to the mesh surface + tier) — not yet built; the amplitude/wavelength cap is now a measured quantity (docs/terrain-shape.md via `sweep:terrain`), not an artefact; amplitude stays 0 until Path A lands.
 - Neighborhood and ground planes are not under the coplanar z-fight assert (symptom: possible flicker).
 - Hospital z-fight and Floor-3 furnish slice are not re-confirmed in the browser.
 - A grazing pass that strips cladding but leaves the slab keeps ceiling fixtures lit under it.
