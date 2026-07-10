@@ -2,7 +2,7 @@
 
 A first-person 3D tornado survival game. A tornado walks through a neighborhood in 2–3 bounded passes; you scout the block, shelter inside a large multi-story hospital, and survive as the storm tears the world apart around you. Buildings partially destruct block-by-block, trees snap and uproot, cars and debris fly, and the funnel bears down with swelling audio and lightning.
 
-Built with **TypeScript**, **Three.js** (rendering + postprocessing), and **Rapier** (physics), bundled by **Vite**. Almost no asset pipeline — all geometry is procedurally generated from blocks and all audio is synthesized at runtime; the sole image asset is the storm sky (`assets/images/`) drawn on the sky dome.
+Built with **TypeScript**, **Three.js** (rendering + postprocessing), and **Rapier** (physics), bundled by **Vite**. Almost no asset pipeline — all geometry is procedurally generated from blocks and all audio is synthesized at runtime; the sole image asset is the storm sky (`assets/images/`, generated with Google Gemini) drawn on the sky dome.
 
 ## Quick start
 
@@ -135,4 +135,4 @@ The game targets **60 fps** at the high preset with a large destructible city. T
 
 ## License
 
-Unlicensed / private project.
+[MIT](LICENSE) © 2026 Jesse.
