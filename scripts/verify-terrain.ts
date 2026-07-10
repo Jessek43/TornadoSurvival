@@ -71,6 +71,53 @@ console.log(
     `padY ${T.padY} · pads ${terrain.padCount} (${terrain.pads.length} rects)\n`,
 );
 
+// The terrain MESH surface at (x,z): THREE.PlaneGeometry's triangulation of the
+// shared sample grid — the ground the game actually renders and collides with.
+// This is the REFERENCE heightAt must now reproduce (it moved off the analytic
+// field onto exactly this surface). Byte-identical to sweep-terrain's meshSurface;
+// each cell splits on the anti-diagonal (b–d = (ix,iz+1)–(ix+1,iz), u+v=1).
+function meshSurface(t: Terrain, x: number, z: number): number {
+  const m = t.cols + 1;
+  const cs = t.cellSize;
+  const fx = (x + SIZE / 2) / cs;
+  const fz = (z + SIZE / 2) / cs;
+  const ix = Math.max(0, Math.min(m - 2, Math.floor(fx)));
+  const iz = Math.max(0, Math.min(m - 2, Math.floor(fz)));
+  const u = Math.max(0, Math.min(1, fx - ix));
+  const v = Math.max(0, Math.min(1, fz - iz));
+  const h00 = t.samples[iz * m + ix];
+  const h10 = t.samples[iz * m + ix + 1];
+  const h01 = t.samples[(iz + 1) * m + ix];
+  const h11 = t.samples[(iz + 1) * m + ix + 1];
+  if (u + v <= 1) return h00 + u * (h10 - h00) + v * (h01 - h00);
+  return h11 + (1 - u) * (h01 - h11) + (1 - v) * (h10 - h11);
+}
+
+// Max |heightAt − meshSurface| over every cell, sampled at the grid VERTEX, the
+// two EDGE midpoints, and interior points either side of the split diagonal — so
+// the check exercises both triangles and the seam, not just cell centres. Returns
+// the gap and the sample count for the printed line.
+function meshGapOf(t: Terrain): { gap: number; samples: number } {
+  const m = t.cols + 1;
+  const cs = t.cellSize;
+  const offsets: [number, number][] = [
+    [0, 0], [0.5, 0], [0, 0.5], [0.5, 0.5], [0.3, 0.7], [0.7, 0.3], [0.5, 0.5001],
+  ];
+  let gap = 0;
+  let count = 0;
+  for (let iz = 0; iz < m - 1; iz++) {
+    for (let ix = 0; ix < m - 1; ix++) {
+      for (const [ou, ov] of offsets) {
+        const x = -SIZE / 2 + (ix + ou) * cs;
+        const z = -SIZE / 2 + (iz + ov) * cs;
+        gap = Math.max(gap, Math.abs(t.heightAt(x, z) - meshSurface(t, x, z)));
+        count++;
+      }
+    }
+  }
+  return { gap, samples: count };
+}
+
 // --- 1. every sample inside a pad equals padY exactly -----------------------
 {
   let inPad = 0;
@@ -255,6 +302,8 @@ const isFieldPoint = (x: number, z: number): boolean =>
 // their centre; the treeline trunks likewise. A height jump between adjacent ring
 // points would leave a gap under the flat wall — a raw Δh (step) bound, so it uses
 // apronMaxStep (the retired maxStep's value, unchanged). At amp 0 the ring is flat.
+// Since heightAt now IS the triangulated ground, this compares the wall bases to
+// the real collider surface, not the analytic field — its meaning, not its bound.
 {
   const H = GameConfig.PLAY_AREA.halfExtent;
   const STEPS = 240;
@@ -282,6 +331,29 @@ const isFieldPoint = (x: number, z: number): boolean =>
   } else {
     console.log(`SKIP  flat: amplitude ${T.amplitude} ≠ 0 (run-2 relief active)`);
   }
+}
+
+// --- 11. heightAt IS the triangulated ground: meshGap ≡ 0 --------------------
+// The point of this run: heightAt no longer evaluates the continuous analytic
+// field, it interpolates the same triangle grid the mesh and Rapier heightfield
+// use. So it must equal the mesh surface to the bit (float reassociation only) at
+// vertices, edges, and both triangle interiors — NOT within a tolerance. The 1e-9
+// bound is a float-equality guard: a larger residual would mean the two are not
+// the same formula, which is a bug, not rounding.
+{
+  const { gap, samples } = meshGapOf(terrain);
+  check(gap < 1e-9, `meshGap: ${gap.toFixed(3)} m over ${samples} samples`);
+}
+
+// --- 11b. and it stays 0 with real relief -----------------------------------
+// The sweep measured meshGap 0.155–0.335 m at amplitude 1.0 against the OLD
+// analytic heightAt. With heightAt on the triangulated grid it is 0 at ANY
+// amplitude (triangulated-vs-triangulated), which is the before/after proof the
+// run did its job. Built locally so the shipped amplitude (0) is untouched.
+{
+  const amp1 = new Terrain({ ...spec, amplitude: 1.0 });
+  const { gap, samples } = meshGapOf(amp1);
+  check(gap < 1e-9, `meshGap at amplitude 1.0: ${gap.toFixed(3)} m over ${samples} samples`);
 }
 
 if (failures > 0) {
