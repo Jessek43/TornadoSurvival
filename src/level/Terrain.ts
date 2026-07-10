@@ -9,13 +9,19 @@
  * (the AlarmController / BootFlow / PlayArea idiom: a pure class, instantiated
  * once and passed as a value; not a provider, service, registry, or factory).
  *
- * `heightAt` is computed ANALYTICALLY, not by interpolating the grid, so it is
- * exact on pad boundaries and deterministic. The `samples` grid is just
- * `heightAt` evaluated at the grid points, shared verbatim by mesh and collider.
+ * `heightAt(x, z)` returns the ground the game PHYSICALLY has: it INTERPOLATES the
+ * triangulated sample grid — locate the cell, pick the triangle on the same
+ * anti-diagonal split THREE.PlaneGeometry (the mesh) and the Rapier heightfield
+ * use, and linearly blend that flat triangle's three corner samples. So there is
+ * exactly ONE ground and `meshGap ≡ 0` by construction, not within a tolerance.
+ * The `samples` grid is filled ONCE at construction by the private analytic
+ * `fieldHeightAt` (pad / apron / noise); that function FILLS the grid, it is not
+ * the ground, and there is deliberately no public path back to it.
  *
- *   pads(x,z) = union( buildingFootprints ⊕ padMargin ) ∪ authoredPadRects
- *   heightAt  = padY inside a pad; a padY→field ramp across `apronWidth`; else
- *               field height (padY + amplitude·noise).
+ *   pads(x,z)     = union( buildingFootprints ⊕ padMargin ) ∪ authoredPadRects
+ *   fieldHeightAt = padY inside a pad; a padY→field ramp across `apronWidth`; else
+ *                   field height (padY + amplitude·noise).  [grid-fill only]
+ *   heightAt      = triangle interpolation of the samples grid.  [the ground]
  *
  * With `amplitude = 0` and `padY = 0` every sample is 0 and the world is
  * byte-identical to the old flat plane — the code path is what this run proves.
@@ -126,7 +132,7 @@ export class Terrain {
     ];
     this.padCount = countComponents(this.pads);
 
-    // Sample grid (heights = heightAt at grid points).
+    // Sample grid (heights = the analytic field sampled at each grid point).
     this.cols = Math.round(spec.size / spec.cellSize);
     this.rows = this.cols; // square ground
     const n = this.cols + 1;
@@ -136,13 +142,46 @@ export class Terrain {
       const wz = -half + iz * spec.cellSize;
       for (let ix = 0; ix < n; ix++) {
         const wx = -half + ix * spec.cellSize;
-        this.samples[iz * n + ix] = this.heightAt(wx, wz);
+        this.samples[iz * n + ix] = this.fieldHeightAt(wx, wz);
       }
     }
   }
 
-  /** THE height function. Pure in (x, z) — there is deliberately no y parameter. */
+  /** THE height function: the ground the game PHYSICALLY collides with. Locate the
+   *  (x, z) cell, pick the triangle on the mesh/heightfield's shared anti-diagonal
+   *  split, and linearly interpolate that flat triangle's three corner samples —
+   *  NOT the analytic field (that only fills the grid). heightAt is therefore the
+   *  triangulated mesh and the Rapier heightfield to the bit: meshGap ≡ 0. Pure in
+   *  (x, z) — there is deliberately no y parameter and no cache. */
   heightAt(x: number, z: number): number {
+    const n = this.cols + 1;
+    const half = this.size / 2;
+    const fx = (x + half) / this.cellSize;
+    const fz = (z + half) / this.cellSize;
+    let ix = Math.floor(fx);
+    let iz = Math.floor(fz);
+    ix = Math.max(0, Math.min(n - 2, ix));
+    iz = Math.max(0, Math.min(n - 2, iz));
+    const u = Math.max(0, Math.min(1, fx - ix)); // 0 at ix → 1 at ix+1 (+x)
+    const v = Math.max(0, Math.min(1, fz - iz)); // 0 at iz → 1 at iz+1 (+z)
+    const h00 = this.samples[iz * n + ix];
+    const h10 = this.samples[iz * n + ix + 1];
+    const h01 = this.samples[(iz + 1) * n + ix];
+    const h11 = this.samples[(iz + 1) * n + ix + 1];
+    // Diagonal b–d = (ix,iz+1)–(ix+1,iz): THREE.PlaneGeometry's per-quad split,
+    // matched by the Rapier heightfield. Triangle (0,0)(0,1)(1,0) covers u+v ≤ 1;
+    // the opposite triangle (through the (1,1) corner) covers u+v ≥ 1.
+    if (u + v <= 1) return h00 + u * (h10 - h00) + v * (h01 - h00);
+    return h11 + (1 - u) * (h01 - h11) + (1 - v) * (h10 - h11);
+  }
+
+  /** The analytic FIELD function — pad → padY, a smootherstep apron ramp out to
+   *  `apronWidth`, else padY + amplitude·noise. Private and called EXACTLY ONCE per
+   *  grid point at construction: it fills `samples`, it is not the ground. Keeping
+   *  it private is deliberate — a public `heightAtAnalytic` would reintroduce two
+   *  disagreeing grounds (the continuous field vs. the triangulated grid heightAt
+   *  interpolates), which is the whole defect this run removes. */
+  private fieldHeightAt(x: number, z: number): number {
     if (this.isPad(x, z)) return this.padY;
     const field = this.padY + this.amplitude * valueNoise(x, z, this.frequency);
     const d = this.distanceOutsideNearestPad(x, z);
