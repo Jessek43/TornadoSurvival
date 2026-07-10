@@ -2,7 +2,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { inject } from "@vercel/analytics";
 import { Game } from "./Game";
 import { BootFlow, type BootTransition, type CapabilityResult } from "./systems/BootFlow";
-import { checkCapabilities, missingCapabilities } from "./boot/capabilities";
+import { checkCapabilities, capabilityReason } from "./boot/capabilities";
 import { routeBootTransition } from "./boot/bootRoute";
 import { BootOverlay } from "./ui/BootOverlay";
 import { isDebugEnabled } from "./debug/debugFlag";
@@ -35,7 +35,7 @@ async function boot(): Promise<void> {
   // the (permanently registered) transition handler can halt it on a fatal error
   // — the handler outlives the handoff to the menu and keeps rendering boot
   // screens for the process lifetime.
-  let cap: CapabilityResult = { webgl2: false, wasm: false };
+  let cap: CapabilityResult = { webgl2: false, wasm: false, pointerlock: false };
   let lastError: unknown = null;
   let rafHandle = 0;
   let game: Game | null = null;
@@ -59,7 +59,9 @@ async function boot(): Promise<void> {
         overlay.showLoading();
         break;
       case "unsupported":
-        overlay.showUnsupported(missingCapabilities(cap));
+        // capabilityReason is non-null here by construction: the unsupported
+        // transition only fires when some capability is missing.
+        overlay.showUnsupported(capabilityReason(cap) ?? "webgl2");
         break;
       case "ready":
         overlay.remove(); // menu is already up (Game's constructor showed it)
@@ -100,9 +102,14 @@ async function boot(): Promise<void> {
   // (1) Capability gate. The forcing flags inject at BootFlow's INPUT — they
   // override the probe RESULT, never add a branch inside checkCapabilities.
   cap = checkCapabilities();
+  // ?forceDesktop bypasses the pointer-lock gate ONLY (never WebGL2/WASM) so the
+  // game can be loaded on a touch device for testing; it injects at the input,
+  // like the forcing flags below, adding no branch inside the probe.
+  if (params.has("forceDesktop")) cap.pointerlock = true;
   const forced = params.get("forceUnsupported");
   if (forced === "webgl") cap.webgl2 = false;
   if (forced === "wasm") cap.wasm = false;
+  if (forced === "pointerlock") cap.pointerlock = false;
   flow.capabilityChecked(cap);
   if (flow.state === "unsupported") return; // terminal — the game never starts
 

@@ -11,6 +11,8 @@
  * the reload button) and swapped between screens; `remove()` detaches it on the
  * handoff to the menu.
  */
+import type { CapabilityReason } from "../boot/capabilities";
+
 export class BootOverlay {
   private readonly root: HTMLDivElement;
   /** The mount parent, RETAINED for the process lifetime. `remove()` (at the
@@ -57,17 +59,42 @@ export class BootOverlay {
     if (this.bar) this.bar.style.width = `${Math.round(clamp01(fraction) * 100)}%`;
   }
 
-  /** Terminal: the browser can't run the game. Names what's missing; the game
-   *  never starts. Static — no renderer bundle needed to show it. */
-  showUnsupported(missing: string[]): void {
+  /** Terminal: the browser can't run the game. Copy is selected from the single
+   *  primary `reason` (a lost graphics stack reads differently to a phone that
+   *  simply lacks a mouse); the game never starts. Static — no renderer bundle
+   *  needed to show it. */
+  showUnsupported(reason: CapabilityReason): void {
     const panel = this.fill("ts-boot-error");
+    if (reason === "pointerlock") {
+      // Not a "your browser is broken" message — the game renders fine here, it
+      // just can't be CONTROLLED without a mouse + pointer lock. No apology, no
+      // "coming soon", no email capture; the ask is to open it on a desktop.
+      panel.append(
+        el("h1", "ts-boot-title", "Desktop only, for now"),
+        el(
+          "p",
+          "ts-boot-sub",
+          "Tornado Survival needs a mouse and keyboard — it uses pointer lock for mouse look, which this browser doesn't provide.",
+        ),
+        el(
+          "p",
+          "ts-boot-hint",
+          "Open it on a laptop or desktop in Chrome, Edge, Firefox, or Safari.",
+        ),
+      );
+      return;
+    }
+    const feature =
+      reason === "webgl2"
+        ? "WebGL2 (hardware-accelerated 3D graphics)"
+        : "WebAssembly (the physics engine)";
     panel.append(
       el("h1", "ts-boot-title", "Can't run this browser"),
-      el("p", "ts-boot-sub", "Tornado Survival needs features this browser or device doesn't provide:"),
+      el("p", "ts-boot-sub", "Tornado Survival needs a feature this browser or device doesn't provide:"),
     );
     const list = document.createElement("ul");
     list.className = "ts-boot-list";
-    for (const m of missing) list.append(el("li", "", m));
+    list.append(el("li", "", feature));
     panel.append(
       list,
       el(
