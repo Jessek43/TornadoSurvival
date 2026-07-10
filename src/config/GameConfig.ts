@@ -18,6 +18,23 @@ export const GameConfig = {
     groundSize: 300, // the industrial yard is a groundSize × groundSize square
   },
 
+  // The ground substrate (level/Terrain.ts). ONE pure height function every
+  // ground consumer asks instead of assuming the plane y = 0. This run keeps
+  // `amplitude` and `padY` at 0, so heightAt returns 0 everywhere and the world
+  // is byte-identical to the flat plane — the heightfield mesh + Rapier
+  // heightfield collider are real, only their values are flat. Relief is a later
+  // run: raise `amplitude` and `padY` and the mesh/collider/consumers follow with
+  // no code change. All developer tuning (NOT user Settings).
+  terrain: {
+    cellSize: 3, // m — 300 m ground ÷ 3 → 100×100 cells, 101×101 samples
+    amplitude: 0, // m of field relief — 0 THIS RUN (see the run note above)
+    padY: 0, // m — building-pad height; 0 keeps the world byte-identical to main
+    padMargin: 3, // m — each building footprint dilates this far into a flat pad
+    apronWidth: 8, // m — pad edge → open field ramp band (degenerate at amp 0)
+    maxStep: 0.5, // m — apron per-cell Δh bound (verify:terrain assertion 4 limit)
+    maxWalkable: 0.6, // slope (rise/run) cap inside PlayArea (assertion 5 limit)
+  },
+
   // The playable square — a hard, readable map edge (systems/PlayArea.ts + the
   // boundary in systems/Boundary.ts read this). `halfExtent` is THE size dial:
   // everything (walls, dressing ring, warning band) derives from it, so
