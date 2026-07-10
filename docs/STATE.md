@@ -55,6 +55,12 @@ Rules for this file (see CLAUDE.md § docs/STATE.md for the obligation to keep i
 - WindField superposes every live funnel; felt intensity tracks the nearest. `?debug §2`
 - 60 fps holds through a heavy destruction pass. `?debug fps`
 - Restart re-enters playing with no GPU/AudioContext re-creation. `?debug logSessionBaseline`
+- Terrain.heightAt is total (0/10201 non-finite) and deterministic (0 mismatches, two builds). `verify:terrain`
+- Every building section footprint lies inside a pad (0/65 outside); 43 trees field-planted. `verify:terrain`
+- Pad, hospital-footprint and on-pad-boundary samples are exactly padY (inclusive, stable). `verify:terrain`
+- At amplitude 0 all 10201 samples are padY; max Δh 0 m and 0 PlayArea cells over slope. `verify:terrain`
+- Ground is a subdivided height mesh + Rapier heightfield collider over one shared grid. `?debug §T`
+- Live heightAt/foot gap + in-pad flag show the heightfield holds the player up. `?debug §T`
 
 ## Working, not asserted
 - Player toolkit: move / look / jump / sprint / crouch / flashlight / grip.
@@ -74,6 +80,7 @@ Rules for this file (see CLAUDE.md § docs/STATE.md for the obligation to keep i
 | `verify:lightning` | strike cap vs debris budget, alarm edges | LightningConfig dump, starts/stops (2/2, 1/1) |
 | `verify:boundary` | wall coverage, containment, warn latch, scaling | 360/360, 10000/10000, 2 transitions |
 | `verify:hospital` | coplanar/support/reachability/enclosure/circulation | overlaps 0, unsupported 0, choked 0, rooms/floor |
+| `verify:terrain` | heightAt totality/determinism, pad flatness, building-on-pad, Δh/slope, boundary stability | 10201 samples, 0/65 outside, max Δh 0, flat 10201/10201 |
 
 ## Debug readout
 
@@ -97,6 +104,7 @@ Rules for this file (see CLAUDE.md § docs/STATE.md for the obligation to keep i
 - `§L lightning` — enabled, next-strike countdown, last strike point/type/blocks.
 - `§A alarm` — playing, start/stop counts, tornado-present.
 - `§B bounds` — zone, edge distance, boundary colliders / props.
+- `§T terrain` — grid @ cellSize, amplitude, pad count, heightAt(feet), foot gap, in-pad, collider kind.
 
 ## Open
 
