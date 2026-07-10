@@ -108,6 +108,7 @@ Rules for this file (see CLAUDE.md § docs/STATE.md for the obligation to keep i
 
 ## Open
 
+- Paved quads meet relief per docs/paved-surfaces-diagnosis.md (Path A: vertices to the mesh surface + tier) — not yet built; amplitude stays 0 until it is.
 - Neighborhood and ground planes are not under the coplanar z-fight assert (symptom: possible flicker).
 - Hospital z-fight and Floor-3 furnish slice are not re-confirmed in the browser.
 - A grazing pass that strips cladding but leaves the slab keeps ceiling fixtures lit under it.
