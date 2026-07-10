@@ -52,17 +52,17 @@ Rules for this file (see CLAUDE.md § docs/STATE.md for the obligation to keep i
 - FPS, awake sections, block bodies, released, debris/budget, and draw calls for manual read. `?debug fps`
 - Live scene light count vs baseline and live vs total fixtures. `?debug lights/dressing`
 - Multi-funnel felt intensity, funnel count, nearest distance, and global debris ≤ cap. `?debug §2`
+- WindField superposes every live funnel; felt intensity tracks the nearest. `?debug §2`
+- 60 fps holds through a heavy destruction pass. `?debug fps`
+- Restart re-enters playing with no GPU/AudioContext re-creation. `?debug logSessionBaseline`
 
-## Unverified
-
+## Working, not asserted
 - Player toolkit: move / look / jump / sprint / crouch / flashlight / grip.
-- WindField superposition of every live funnel as felt in-world.
 - Storm sky dome, lightning bolt visuals, thunder audio, and atmosphere mood flasher.
 - In-place teardown/rebuild runs without GPU or AudioContext churn.
 - Pointer-lock loss pauses the whole sim and one click re-locks across the browser cooldown.
 - Hospital furnish vertical slice (Floor-3 wards) vs the leaner base furnish on other departments.
 - Exterior detail: ground textures, ambulance model, tree-vs-building nudge.
-- 60 fps sustained under destruction (readable, not asserted).
 - Vercel Analytics reporting from the deployed site.
 
 ## Verification
