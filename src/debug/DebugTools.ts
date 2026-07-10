@@ -14,6 +14,7 @@ import type { AlarmController } from "../systems/AlarmController";
 import type { AppFlow } from "../systems/AppFlow";
 import type { PlayArea } from "../systems/PlayArea";
 import type { Boundary } from "../systems/Boundary";
+import type { Terrain } from "../level/Terrain";
 import { LightningConfig } from "../config/LightningConfig";
 import type { Physics } from "../core/Physics";
 import type { StairLight } from "../level/hospital/params";
@@ -83,6 +84,7 @@ export class DebugTools {
     private readonly flow: AppFlow,
     private readonly playArea: PlayArea,
     private readonly boundary: Boundary,
+    private readonly terrain: Terrain,
   ) {
     this.label = document.createElement("div");
     this.label.style.cssText =
@@ -255,7 +257,26 @@ export class DebugTools {
       `last landing: ${this.player.lastFallSpeed.toFixed(1)} m/s -> ${this.player.lastFallDamage.toFixed(0)} hp`,
       this.lightningReadout(),
       this.boundaryReadout(),
+      this.terrainReadout(),
     ].join("\n");
+  }
+
+  /** §T substrate readout: the grid + amplitude, the merged pad count, the ground
+   *  height under the player's feet and the gap to it (the number that says the
+   *  heightfield collider is doing its job — a few cm, not drifting), whether the
+   *  player is over a building pad, and the collider kind (so the swap is visible).
+   *  With amplitude 0 heightAt is 0 everywhere: walk lot→treeline and `in pad`
+   *  flips yes→no while `heightAt`/`foot gap` hold. */
+  private terrainReadout(): string {
+    const p = this.player.position;
+    const h = this.terrain.heightAt(p.x, p.z);
+    const feetY = this.player.capsuleBottomY;
+    return (
+      `§T terrain: ${this.terrain.rows}×${this.terrain.cols} @ ${this.terrain.cellSize}m` +
+      ` · amp ${GameConfig.terrain.amplitude} · pads ${this.terrain.padCount}\n` +
+      `   heightAt(feet): ${h.toFixed(2)} · foot gap: ${(feetY - h).toFixed(2)}m` +
+      ` · in pad: ${this.terrain.isPad(p.x, p.z) ? "yes" : "no"} · ground collider: heightfield`
+    );
   }
 
   /** Map-edge readout: which zone the player is in (in / warn / out), the signed

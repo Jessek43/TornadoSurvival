@@ -313,6 +313,7 @@ export class Game {
           this.flow,
           this.playArea,
           this.boundary,
+          this.terrain,
         )
       : null;
 
